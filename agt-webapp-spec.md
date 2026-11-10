@@ -118,19 +118,19 @@ Add a row (next free port) when you create an app.
 
 | Concern | Choice |
 | --- | --- |
-| Runtime | Node.js 24 LTS (`"engines": { "node": ">=24.0.0" }`), ESM only (`"type": "module"`) |
-| Language | TypeScript (`~5.8`), `strict`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch` |
+| Runtime | Node.js 26 LTS (`"engines": { "node": ">=26.0.0" }`), ESM only (`"type": "module"`); npm 11.20 or newer (STACK-7) |
+| Language | TypeScript (`~7.0`), `strict`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch` |
 | Server | Fastify 5 with `@fastify/type-provider-typebox` and `@sinclair/typebox` |
 | Server plugins | `@fastify/cookie`, `@fastify/rate-limit`, `@fastify/static`, `@fastify/multipart` (if uploads), `@fastify/swagger` |
 | API description | OpenAPI 3.1, generated from route schemas ([§6](#6-rest-api-and-openapi)) |
 | Database | SQLite via `better-sqlite3`, **or** PostgreSQL via `pg` ([§7](#7-data-storage)) |
 | Config parsing | `yaml` + TypeBox schema |
-| Client | React 19 + Vite 6 (`@vitejs/plugin-react`) |
+| Client | React 19 + Vite 8 (`vite` `^8.3`, `@vitejs/plugin-react` `^6.3`) |
 | Markdown (if needed) | `react-markdown` + `remark-gfm` only ([SEC-12](#106-user-content)) |
 | Captcha (if anonymous writes) | `altcha` (widget) + `altcha-lib` (server) ([§11](#11-anonymous-input-and-altcha)) |
 | ZIP (backups) | `yazl` (write) + `yauzl` (read) |
 | Logging | `pino` (Fastify's logger) to stdout and the log store ([§13](#13-logging)) |
-| Server bundle | `esbuild` → `dist-server/index.mjs` |
+| Server bundle | `esbuild` (`^0.28`; Vite 8 needs 0.27 or newer) → `dist-server/index.mjs` |
 | Tests | `node:test` + `node:assert/strict`; Fastify `inject()` for HTTP |
 | Browser tests (dev only, TEST-6) | `@playwright/test` with Chromium; optionally `@axe-core/playwright` |
 | Lint | `tsc -b` (no ESLint, no Prettier) |
@@ -147,7 +147,7 @@ Add a row (next free port) when you create an app.
   | Dependency | Supported means | Check |
   | --- | --- | --- |
   | Node.js | An Active or Maintenance LTS line that is not past its end-of-life date | [nodejs/Release schedule](https://github.com/nodejs/Release#release-schedule) |
-  | Vite | The latest minor of a major that Vite still patches: the current major, or the latest minor of the previous or second-to-last major (the latter gets security patches only). Use a range that resolves to that minor, e.g. `^6.4` rather than `^6.2.3` | [Vite releases](https://vite.dev/releases#supported-versions) |
+  | Vite | The latest minor of a major that Vite still patches: the current major, or the latest minor of the previous or second-to-last major (the latter gets security patches only). Use a range that resolves to that minor, e.g. `^8.3` rather than `^8.0.0` | [Vite releases](https://vite.dev/releases#supported-versions) |
   | Other dependencies (TypeScript, Fastify, React, …) | The latest minor and patch of the major in use; maintainers rarely patch older lines | The package's release notes |
 
   A dependency whose required line is no longer supported is reported in the dependency review (STACK-6) and, if it
@@ -160,6 +160,13 @@ Add a row (next free port) when you create an app.
 
   Updating within the allowed ranges is a PATCH or MINOR release of the app (VER-4, VER-5); moving to a new major of
   a dependency follows the usual version rules for its effect on installations.
+- **STACK-7** **Install scripts.** npm 11.20 and newer (bundled with Node.js 26) skips the install scripts of every
+  dependency that `package.json` does not approve in `allowScripts`. Apps MUST record a decision for every dependency
+  that has one, with `npm install-scripts approve <pkg>` or `npm install-scripts deny <pkg>`, so that `npm ci` behaves
+  the same everywhere; `npm install-scripts ls` MUST list nothing. Approve `better-sqlite3` and `esbuild`: both ship
+  prebuilt binaries and work even when denied, but their scripts are the fallback for a platform without one (the
+  Dockerfile and DEP-6 install the build tools `better-sqlite3`'s `node-gyp rebuild` needs). Approve any other script
+  only with a reason in the PR description.
 
 ## 4. Repository layout
 
@@ -1333,7 +1340,7 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
 
   ```dockerfile
   # syntax=docker/dockerfile:1
-  FROM node:24-bookworm-slim AS build
+  FROM node:26-bookworm-slim AS build
   RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
@@ -1343,7 +1350,7 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   COPY . .
   RUN npm run build && npm prune --omit=dev
 
-  FROM node:24-bookworm-slim AS runtime
+  FROM node:26-bookworm-slim AS runtime
   # Postgres apps: install postgresql-client-<server major> from the PGDG apt repository here (BAK-6).
   ENV NODE_ENV=production \
       AGT_<APP>_CONFIG_FILE=/app/config.yaml \
@@ -1458,8 +1465,8 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
 - **DEP-6** The local method is a systemd service. The README documents these steps (adapted per app):
 
   ```bash
-  # 1. Node.js 24 from NodeSource, and build tools for native modules
-  curl -fsSL https://deb.nodesource.com/setup_24.x -o /tmp/nodesource_setup.sh
+  # 1. Node.js 26 from NodeSource, and build tools for native modules
+  curl -fsSL https://deb.nodesource.com/setup_26.x -o /tmp/nodesource_setup.sh
   sudo -E bash /tmp/nodesource_setup.sh
   sudo apt-get install -y nodejs git build-essential python3
 
@@ -1563,7 +1570,7 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   | `dev:server` | `npm run build:server && node dist-server/index.mjs` |
   | `build` | `npm run build:client && npm run build:server` |
   | `build:client` | `tsc -b && vite build` |
-  | `build:server` | `esbuild server/index.ts --bundle --platform=node --target=node24 --format=esm --packages=external --loader:.sql=text --outfile=dist-server/index.mjs` |
+  | `build:server` | `esbuild server/index.ts --bundle --platform=node --target=node26 --format=esm --packages=external --loader:.sql=text --outfile=dist-server/index.mjs` |
   | `start` | `node dist-server/index.mjs` |
   | `lint` | `tsc -b --pretty false` |
   | `test` | `npm run test:client && npm run test:server` |

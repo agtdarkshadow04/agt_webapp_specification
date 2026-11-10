@@ -35,6 +35,12 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - **AI disclosure (DOC-1, #10):** change the README's disclosure line to exactly
   `> **AI Disclosure:** This software was created using generative AI.` Remove "Its functionality has been verified
   by human review." and any other claim of review or verification.
+- **Stack (STACK-1, #12):** move to Node.js 26 (`engines` `>=26.0.0`, `node:26-bookworm-slim` in both Dockerfile stages,
+  NodeSource `setup_26.x`, `esbuild --target=node26`), TypeScript `~7.0`, Vite `^8.3` with `@vitejs/plugin-react`
+  `^6.3`, and esbuild `^0.28` (Vite 8 needs esbuild 0.27 or newer, and `npm install` fails on the peer
+  conflict otherwise). Run `npm run check` afterwards; the reference implementation needed no source changes.
+- **Install scripts (STACK-7, #12):** record `allowScripts` in `package.json` (`npm install-scripts approve
+  better-sqlite3 esbuild`) so that `npm install-scripts ls` lists nothing.
 - **Translated errors (I18N-6, #9):** add a translation in every locale for every error code and field code, add
   `src/lib/errors.ts` with `errorText()` and `fieldErrorText()`, and show errors only through them (FE-5). Add the
   TEST-4 translation and error body checks.
@@ -48,6 +54,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - BAK-10 (rollback) and BAK-11 (failed rollback: maintenance, marker file, refusal to start) (#5).
 - API-6: the error body's `params`, and `code` and `params` on every `FieldError`, with a standard table of field
   codes (#9).
+- STACK-7: apps record an install-script decision for every dependency in `allowScripts`, because npm 11.20 and
+  newer skips unapproved install scripts (#12).
 - I18N-6: clients translate every error code and field code in all locales; the English `message` is only a fallback
   (#9).
 - API-6: `503 maintenance`. TEST-4: backup format, concurrency and failure tests. This also covers #11's test of
@@ -58,6 +66,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - BAK-3: `action=restore` re-validates its upload; there is no state between preview and restore (#5).
 - BAK-4: restore is an ordered procedure with draining, a database or pool reopen, and a post-restore health check
   (#5).
+- STACK-1: Node.js 26 LTS (was 24), TypeScript `~7.0` (was `~5.8`), Vite 8 with `@vitejs/plugin-react` 6 (was Vite 6),
+  esbuild `^0.28`. DEP-1, DEP-6 and TEST-1 use Node.js 26 (#12).
 - DOC-1: the AI disclosure line no longer claims human review, which the spec never required; it is now
   "This software was created using generative AI." (#10). The spec repository's README says the same of the spec.
 - I18N-5, FE-5, FE-6: error text is translated by code, and the shared validators return field codes (#9).
