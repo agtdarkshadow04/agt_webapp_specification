@@ -43,6 +43,10 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - **Setup password and username (AUTH-3, AUTH-5, SRV-8, #45):** at startup, while no admin exists, refuse to start if
   `AGT_<APP>_SETUP_PASSWORD` is longer than 1024 characters. Reject a username that is empty after trimming or longer
   than 64 characters with `400 validation_failed`. Add the TEST-4 cases.
+- **Data writes by effect (BAK-8, ALT-2, SEC-8, #58):** declare `config: { writesData }` on every route and job and
+  route every write to the main database or `uploads/` through `withDataWrite()` (`server/dataWrite.ts`), which
+  applies the barrier and makes writing functions throw outside it. Generate the ALTCHA HMAC key (and any other
+  `app_secrets`) at startup and after a restore, never in a request. Add the TEST-4 checks.
 - **Postgres role, dump scope and preview (DATA-11, BAK-2, BAK-3, BAK-4, BAK-6, DEP-3, DEP-6, TEST-3, #54, #55):**
   - Connect as the non-superuser `agt_<app_snake>` and refuse to start as a superuser. Docker: use the image's
     `postgres` superuser only in `deploy/postgres-init/10-app-role.sh`, keep its password in `.env.db` (read only by
@@ -127,6 +131,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- BAK-8: a data write is defined by what it changes (the main database or uploads), declared per route and job and
+  enforced by `withDataWrite()`, instead of by HTTP method; ALT-2: the HMAC key is created at startup (#58).
 - BAK-3: a Postgres preview restores the dump into a separate preview database to check it, after an allowlist of
   table-of-contents entries; DATA-11, DEP-3, DEP-6: the app's Postgres role is never a superuser, and Docker keeps
   the bootstrap superuser's password away from the app; BAK-2: dumps contain only the `public` schema (#54, #55).

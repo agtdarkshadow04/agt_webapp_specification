@@ -218,6 +218,7 @@ agt_<app_snake>/
 │   ├── http.ts               # HttpError, multipart helper
 │   ├── passwords.ts          # scrypt hashing, constant-time compare
 │   ├── session.ts            # cookie sessions, CSRF check
+│   ├── dataWrite.ts          # withDataWrite(): the backup/restore write barrier (BAK-8, BAK-12)
 │   ├── logs.ts               # log store, server-log stream, retention job (§13)
 │   ├── audit.ts              # audit onResponse hook, IP hashing (§13)
 │   ├── backup.ts  zip.ts     # backup/restore and safe ZIP handling
@@ -768,7 +769,7 @@ agt_<app_snake>/
   | Location | Holds | In backups |
   | --- | --- | --- |
   | `.env` | Operator-supplied secrets: `AGT_<APP>_SETUP_PASSWORD`, `AGT_<APP>_DB_PASSWORD`, other `AGT_<APP>_<NAME>` secrets (CFG-2) | No (BAK-2) |
-  | `app_secrets` table (main database) | Generated secrets that belong to the data, e.g. the ALTCHA HMAC key (ALT-2) | Yes, as part of the database |
+  | `app_secrets` table (main database) | Generated secrets that belong to the data, e.g. the ALTCHA HMAC key (ALT-2), created at startup, never by a request (BAK-8) | Yes, as part of the database |
   | `log_meta` table (log store) | The IP-hash key only (LOG-12) | No (LOG-17) |
 
   The admin password hash (AUTH-2) and session token hashes (AUTH-8) are stored in their own tables and are not
@@ -816,7 +817,10 @@ agt_<app_snake>/
   MUST require a self-hosted ALTCHA proof-of-work solution **and** a rate limit (SEC-7). Apps with no
   anonymous writes do not include ALTCHA.
 - **ALT-2** Server: `GET /api/altcha/challenge` issues challenges with `altcha-lib` (SHA-256, cost and TTL
-  from `altcha.*`). The HMAC key is generated once (32 random bytes) and stored in `app_secrets` (SEC-8); it
+  from `altcha.*`). The HMAC key is generated once (32 random bytes) **at startup**, after migrations and before the
+  server listens, if `app_secrets` has none, and again at the end of a restore (BAK-4 step 5) if the restored data
+  has none, and stored there (SEC-8); requests only read it, so
+  `GET /api/altcha/challenge` never writes the main database. It
   is never read from `config.yaml` or the environment. Each solved challenge is accepted **once** (atomically insert
   each used challenge ID with its expiry into an `altcha_used` table and purge expired rows); expired challenges are
   rejected with `400 captcha_failed` and a message telling the user to verify again.
@@ -904,8 +908,16 @@ agt_<app_snake>/
     New ones that the state stops are held from the moment the state is entered (`backup`) or refused (`restore`).
     The drain lasts up to 30 seconds. If something is still running then, the operation is abandoned: the lock
     returns to `idle`, nothing has changed, and the request gets `409 conflict` ("The server is busy. Try again.").
-    A data write is any non-`GET` `/api/` route except `/api/admin/login` and `/api/admin/logout`, and any
-    background job that writes the main database or uploads. SQLite apps count them with an in-flight counter that
+    A **data write** is any request or background job that changes the main database or `uploads/`, whatever its
+    HTTP method; session rows (login, logout, expiry purges) are not data writes, because backups never contain
+    sessions (AUTH-8) and a restore replaces them anyway. Every route declares it in its route options,
+    `config: { writesData: true | false }`, and every job when it is registered; the barrier is applied from that
+    declaration, never from the method. All writes to the main database and `uploads/` go through
+    `withDataWrite(fn)` (`server/dataWrite.ts`), which applies the barrier (SQLite: the in-flight counter; Postgres:
+    the BAK-12 write procedure) and marks the call with `AsyncLocalStorage`. Every repository and upload function
+    that writes MUST check that mark and throw outside it, so an undeclared write fails in tests instead of
+    slipping past a backup. Generated secrets are created at startup (ALT-2, SEC-8), never by a request. SQLite apps
+    count data writes with an in-flight counter that
     each such request or job increments when it starts and decrements when it ends, including on error. Postgres
     apps drain writes through the write lock instead (BAK-12), which covers every process; reads in other processes
     stop as soon as they see the new state.
@@ -974,7 +986,8 @@ agt_<app_snake>/
        (as for any data write, below), so they never run during a backup or restore; if the state is not `idle`,
        release the write lock, wait a second and try again.
     6. Release the migration lock, read `control.operation` and set the local state (**Following**).
-  - **Every data write** (BAK-8: requests and background jobs) runs on one client from the pool, in this order:
+  - **Every data write** (BAK-8: requests and background jobs, through `withDataWrite()`) runs on one client from
+    the pool, in this order:
     1. `SET lock_timeout = '30s'`, then `SELECT pg_advisory_lock_shared(0, hashtext('agt_<app_snake>_writes'))`. On
        a lock timeout (SQLSTATE `55P03`) return `503 maintenance` with `Retry-After: 10` (a job retries later).
     2. `BEGIN`, then `SELECT state FROM control.operation WHERE id = 1`. If it is not `idle`, roll back, unlock and
@@ -1870,6 +1883,10 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   - backup format: the manifest has exactly the BAK-2 fields, lists every entry but itself, and uses safe relative
     paths; an archive with an unlisted entry, a missing listed entry, a `..` path or a newer `formatVersion` is
     rejected (BAK-2, BAK-7);
+  - data writes (BAK-8): every registered `/api/` route declares `config.writesData` (iterate the routes as in
+    API-13); calling a writing repository or upload function outside `withDataWrite()` throws; the whole server test
+    suite runs with that check on, so any route or job that writes without declaring it fails; `GET` routes,
+    including `GET /api/altcha/challenge` on a fresh database, write nothing to the main database;
   - concurrency (BAK-8, BAK-9): a write started during a backup waits and then succeeds, and the backup holds either
     none or all of that write (database row and upload); a write **already in progress** when the backup starts
     (held open by a test hook) finishes before the snapshot and is all in the backup; a write still running after
