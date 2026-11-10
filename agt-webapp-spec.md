@@ -7,6 +7,9 @@
 | **Audience** | AI coding agents that design, build, review or maintain AGT web applications |
 | **Source** | [`agtdarkshadow04/agt_webapp_specification`](https://github.com/agtdarkshadow04/agt_webapp_specification), released as tags `vX.Y.Z` (SPEC-1) |
 | **Reference implementation** | [`agtdarkshadow04/agt_event_calendar`](https://github.com/agtdarkshadow04/agt_event_calendar) (AGT Event Calendar); its deviations are listed in its `AGENTS.md` |
+| **Owner** | Alliance of Galactic Travellers; maintained by [`agtdarkshadow04`](https://github.com/agtdarkshadow04) |
+| **Release date and approval** | The date of this version's section in `CHANGELOG.md`. A version is approved when the owner merges its release PR and creates the annotated tag `vX.Y.Z` (SPEC-1); the tag's GitHub Release is the record |
+| **Security contact** | Report vulnerabilities in the spec or in an AGT app privately through the repository's **Security** tab → **Report a vulnerability** (GitHub private vulnerability reporting), never in a public issue |
 
 This document defines how every Alliance of Galactic Travellers (AGT) web application is built: stack,
 repository layout, API, data storage, configuration, authentication, security, backups, UI design,
@@ -290,6 +293,14 @@ agt_<app_snake>/
 - **API-8** Collections whose size is bounded by admin effort (events, holidays) MAY be returned as a plain
   array. Collections that can grow without bound (logs, submissions over time) MUST paginate with
   `?limit=<1..200>&cursor=<opaque>` and return `{ "items": [...], "nextCursor": "<opaque>" | null }`.
+  - **Order** by a unique key that only grows (e.g. a log's `seq`), newest first. If the natural order is a
+    column that is not unique (e.g. a timestamp), add the unique key as a tie-breaker. Then items written while a
+    client pages never shift a page, and no item appears twice.
+  - **Cursor:** the position after the last item returned, encoded opaquely (e.g. base64url of that item's `seq`).
+    It does not expire. A cursor that cannot be decoded returns `400 invalid_request`. A cursor whose item has
+    since been deleted (e.g. by retention) still works: the next page starts after that position.
+  - `limit` defaults to `50`. `nextCursor` is `null` on the last page. Filters are sent again with every page;
+    the server does not store them in the cursor.
 - **API-9** The server never sets CORS headers and never answers preflight requests with permission
   ([SEC-6](#103-csrf-and-cors)).
 
@@ -297,7 +308,11 @@ agt_<app_snake>/
 
 - **API-10** Every route under `/api/` MUST declare TypeBox schemas for `params`, `querystring`, `body` (when
   present) and `response` (every success status, plus `default` referencing the shared `ErrorBody` schema).
-  Request schemas MUST set `additionalProperties: false`. Semantic validation (cross-field rules, translated
+  Request schemas MUST set `additionalProperties: false`, and this applies to `params` and `querystring` as well
+  as `body`. With Fastify's default Ajv options (`removeAdditional: true`), unknown properties are then removed
+  before the handler runs rather than rejected; an app MAY set `ajv: { customOptions: { removeAdditional: false } }`
+  to reject them with `400 invalid_request` instead. Either way the handler never sees an undeclared property.
+  Semantic validation (cross-field rules, translated
   messages) still runs through the shared validators in `src/lib/validation.ts`, after the schema check.
 - **API-11** Register `@fastify/swagger` in `server/openapi.ts` **before** any route, with
   `openapi: { openapi: '3.1.0', info: { title: '<App Name> API', version: <package.json version> } }`.
@@ -481,7 +496,24 @@ agt_<app_snake>/
 
 - **CFG-6** Every app MUST have a **Settings** tab in the admin dashboard. `server/config.ts` exports
   `EDITABLE_SETTINGS`: a map from dotted key (`site.title`) to `{ schema, default, description }`. Only these
-  keys can be stored in the `settings` table (value as JSON).
+  keys can be stored in the `settings` table (value as JSON). Each `schema` enforces the allowed values below;
+  a value outside them is rejected with `400 invalid_setting` (CFG-8), and the same schema validates the key in
+  `config.yaml` (CFG-3):
+
+  | Key | Default | Allowed |
+  | --- | --- | --- |
+  | `site.title` | `<App Name>` | 1–100 characters |
+  | `site.supportUrl` | `https://www.nms-agt.com/support` | An absolute `http:` or `https:` URL |
+  | `<feature>.enabled` | `true` | Boolean (ALT-5) |
+  | `<feature>.rateLimit.max` | `5` | Integer 1–10000 (anonymous writes, SEC-7) |
+  | `<feature>.rateLimit.windowMinutes` | `60` | Integer 1–1440 |
+  | `uploads.maxImageBytes` | `10485760` | Integer 1024–10485760 (10 MB, SEC-9) |
+  | `backup.maxZipBytes` | `209715200` | Integer 1024–2147483648 (2 GiB) |
+  | `backup.maxUncompressedBytes` | `1073741824` | Integer 1024–8589934592 (8 GiB) |
+  | `backup.maxEntries` | `10000` | Integer 1–100000 |
+  | `logs.*` | See LOG-16 | See LOG-16 |
+
+  App-specific editable keys SHOULD declare their range in their schema the same way.
 - **CFG-7** The effective value of a setting is: **config file > dashboard > default**. Compute it in one
   place (`settingStates()` / `setting()` in `server/context.ts`). Every state carries
   `{ key, value, source: 'config' | 'dashboard' | 'default', locked, default, description }`.
@@ -509,8 +541,12 @@ agt_<app_snake>/
   - hashing: `{ N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }`;
   - verifying: use the `N`, `r` and `p` from the stored hash, with `maxmem` of at least `128 · r · (N + p + 2)`
     bytes computed from them. Use twice that for headroom (e.g. `2 * 128 * r * (N + p + 2)`).
-- **AUTH-3** Admin passwords MUST be 12–1024 characters. Compare secrets (setup password, usernames) with a
-  constant-time function. On login, verify against a dummy hash when no admin exists, so timing does not
+- **AUTH-3** Admin passwords MUST be 12–1024 characters. The admin username is trimmed of surrounding whitespace
+  and SHOULD then be 1–64 characters; it is stored as entered after trimming (no case folding or other
+  normalization), so login compares the trimmed input with it exactly. Compare secrets (setup password,
+  usernames) with a constant-time function that does not return early when the lengths differ: compare the
+  SHA-256 digests of both values with `crypto.timingSafeEqual`, or pad both to the longer length, compare them,
+  and only then also compare the lengths (as the reference implementation's `secretsEqual()` does). On login, verify against a dummy hash when no admin exists, so timing does not
   reveal whether setup has run. Return the same `401 invalid_credentials` for a wrong username or password.
 - **AUTH-4** Changing the password (`POST /api/admin/password`, requires the current password) ends every
   session and starts a new one for the caller.
@@ -530,6 +566,10 @@ agt_<app_snake>/
      an admin exists, **even if the variable is still set**. On success it creates the admin, signs them in
      and returns `201 { username }`.
   4. The setup password never becomes the admin password and is never stored.
+
+  Request size: the setup and login body schemas cap `setupPassword` and `password` at 1024 characters
+  (`maxLength`, matching AUTH-3) and `username` at 64. Fastify's `bodyLimit` for JSON requests SHOULD be at most
+  2 MiB (`2 * 1024 * 1024`); multipart uploads are limited separately (SEC-9, BAK-1).
 - **AUTH-6** After setup the operator MUST be told to remove the variable, in all four places:
   - the server log, once on success: "Admin account created. Remove AGT_<APP>_SETUP_PASSWORD from .env and
     restart.";
@@ -594,7 +634,9 @@ agt_<app_snake>/
 - **SEC-7** Register `@fastify/rate-limit` with `global: false` and apply per-route limits, configurable in
   `config.yaml`: login and password change (10 / 15 min), setup (10 / 15 min), admin uploads (120 / 15 min),
   every anonymous write (default 5 / 60 min, dashboard-editable), captcha challenges (60 / min). Rate-limit
-  responses use the error body with `429 rate_limited`.
+  responses use the error body with `429 rate_limited`. Limits are counted per client address: keep the plugin's
+  default key, `request.ip`, which honours `server.trustProxy` (SEC-4). Behind a proxy, a missing or wrong
+  `trustProxy` makes every client share the proxy's address and therefore one limit.
 
 ### 10.5 Secrets
 
@@ -1061,7 +1103,10 @@ All AGT apps MUST look like one family.
   | `hi` | हिन्दी (Hindi) | 🇮🇳 |
   | `ja` | 日本語 (Japanese) | 🇯🇵 |
 
-  Adding a locale means adding it to this table first, then to every app.
+  `Code` is the value stored in preferences and used as a key; it is a BCP 47 language tag. Where the region
+  matters, use the full BCP 47 tag for `<html lang>`, `Intl` formatters and the `hreflang` of links: `pt-BR` for
+  `pt`. Every other code is its own tag. Changing a stored code would reset visitors' saved preferences, so codes
+  are never renamed. Adding a locale means adding it to this table first, then to every app.
 - **I18N-2** Public strings live in `src/translations.ts`: `export const LOCALES`, `type Locale`,
   `type Translations`, one object per locale, `TRANSLATIONS: Record<Locale, Translations>`,
   `getTranslations(locale)` (falls back to English) and `formatTranslation(template, values)` with
