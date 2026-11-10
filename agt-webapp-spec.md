@@ -95,7 +95,7 @@ change an existing one.
   | `localStorage` keys | `agt_<app_snake>_*` (e.g. `agt_<app_snake>_settings`) |
   | Docker Compose service / named volume | `<app>` / `<app>-data` (and `<app>-db` for Postgres) |
   | Docker image | `agt-<app>:latest` |
-  | Postgres database and role | `agt_<app_snake>` |
+  | Postgres database and role | `agt_<app_snake>`; restore preview database `agt_<app_snake>_preview` (BAK-3) |
   | Local install: system user, code, config, data | `agt-<app>`, `/opt/agt-<app>`, `/etc/agt-<app>/`, `/var/lib/agt-<app>/` |
   | systemd unit | `agt-<app>.service` |
   | Backup file / manifest `format` | `agt-<app>-backup-<timestamp>.zip` / `agt-<app>-backup` |
@@ -193,7 +193,8 @@ agt_<app_snake>/
 ├── .gitignore  .dockerignore .gitattributes
 ├── deploy/
 │   ├── agt-<app>.service     # systemd unit for local installs (§18.2)
-│   └── Caddyfile.example     # TLS reverse proxy example
+│   ├── Caddyfile.example     # TLS reverse proxy example
+│   └── postgres-init/10-app-role.sh  # Postgres apps: creates the non-superuser role and databases (DEP-3)
 ├── index.html                # public SPA entry
 ├── admin.html                # admin dashboard entry (noindex)
 ├── package.json  package-lock.json
@@ -485,7 +486,12 @@ agt_<app_snake>/
   null, applied_at timestamptz not null default now())` table. Run all startup migrations under the migration lock,
   in the order BAK-12 gives (**Startup**), so concurrent starts are safe. Use a single `pg.Pool`. Wrap multi-statement writes in a
   `withTransaction(pool, async (client) => …)` helper that always releases the client. Use
-  `timestamptz` for instants, `uuid` for IDs and `text` rather than `varchar(n)`.
+  `timestamptz` for instants, `uuid` for IDs and `text` rather than `varchar(n)`. The app's own tables, sequences,
+  indexes and constraints live in the `public` schema and nowhere else (no functions, triggers, views or extensions;
+  BAK-3's allowlist rejects them); the log store uses `logs` (LOG-1) and the operation lock `control` (BAK-12).
+  The app connects as the role `agt_<app_snake>`, which MUST NOT be a superuser and owns only the app database and
+  its preview database; at startup the app refuses to start (SRV-8) if `SELECT rolsuper FROM pg_roles WHERE rolname
+  = current_user` is true.
 
 ### 7.3 IDs, times and files
 
@@ -562,6 +568,7 @@ agt_<app_snake>/
   #   host: localhost
   #   port: 5432
   #   name: agt_<app_snake>
+  #   previewName: agt_<app_snake>_preview   # scratch database for the restore preview (BAK-3)
   #   user: agt_<app_snake>
   # session:
   #   ttlHours: 12
@@ -837,15 +844,16 @@ agt_<app_snake>/
   ```text
   manifest.json        # see below
   database.sqlite      # SQLite apps: online-backup snapshot, sessions deleted, VACUUMed, journal_mode DELETE
-  database.dump        # Postgres apps: pg_dump --format=custom --exclude-schema=logs --exclude-schema=control --exclude-table-data=sessions
+  database.dump        # Postgres apps: pg_dump --format=custom --schema=public --no-owner --no-privileges --exclude-table-data=sessions
   uploads/<uuid>.<ext> # every stored upload
   config.yaml          # the current file, byte for byte, if one exists
   ```
 
   `.env` and the log store (LOG-17) are never included. For Postgres apps the log store is the `logs` schema of
-  the same database (LOG-1), so `pg_dump` MUST be given `--exclude-schema=logs`, and the `control` schema of the
-  shared operation lock (BAK-12) is excluded the same way. The README warns that backups contain the admin
-  password hash and generated secrets and must be stored securely.
+  the same database (LOG-1), so `pg_dump` dumps only the app's `public` schema (DATA-11), which also leaves out the
+  `control` schema of the shared operation lock (BAK-12). The README warns that backups contain the admin
+  password hash and generated secrets and must be stored securely, and that only backups made by an AGT instance
+  the operator trusts should be restored: a Postgres restore runs the SQL in the dump, within the limits of BAK-3.
 
   `manifest.json` (UTF-8 JSON) has exactly these fields:
 
@@ -1019,13 +1027,42 @@ agt_<app_snake>/
 
 - **BAK-3** Restore MUST first run a **preview** that validates without changing anything: manifest format
   and checksums (BAK-2, BAK-7), only expected paths, size and entry limits, database integrity
-  (`PRAGMA integrity_check` / `pg_restore --list`), schema version (older → will be migrated; newer → refused),
+  (SQLite: `PRAGMA integrity_check` on the extracted file; Postgres: the steps below), schema version (older → will
+  be migrated; newer → refused),
   required tables, every upload through the image checks, and the admin row's password hash, if there is one,
   through the AUTH-2 check (a hash that fails it is rejected with `422 archive_rejected`, because it could never
   sign in). The preview reports counts, warnings and how the
-  backup's `config.yaml` differs from the current one. Postgres apps: if the dump's table of contents
-  (`pg_restore --list`) has entries in the `logs` schema (backups made before spec 5.1.0), the preview accepts it
-  with the warning that its log tables will be ignored.
+  backup's `config.yaml` differs from the current one.
+
+  **Postgres preview.** A Postgres dump can only be checked by restoring it, so the preview does that in the
+  preview database `database.previewName` (default `agt_<app_snake>_preview`), which installation creates, owned
+  by the app role (DEP-3, DEP-6). Previews run one at a time: take
+  `pg_try_advisory_lock(0, hashtext('agt_<app_snake>_preview'))` on a pool client, else `409 conflict`.
+  1. **Allowlist.** Read the table of contents with `pg_restore --list`. Every entry MUST be one of these, or the
+     archive is rejected with `422 archive_rejected` naming the first entry that is not:
+
+     | Entry type | Allowed when |
+     | --- | --- |
+     | `SCHEMA - public`, `COMMENT - SCHEMA public` | Always; removed from the list, never restored |
+     | `TABLE`, `TABLE DATA` | Schema `public`, name in `EXPECTED_TABLES` or `schema_migrations` |
+     | `SEQUENCE`, `SEQUENCE OWNED BY`, `SEQUENCE SET`, `DEFAULT`, `CONSTRAINT`, `FK CONSTRAINT`, `INDEX` | Schema `public` |
+     | Any entry in schema `logs` or `control`, and `SCHEMA - logs` / `SCHEMA - control` | Dumps made before 6.0.0 (`logs` before 5.1.0); removed from the list with the warning that log tables are ignored |
+
+     Everything else, including `FUNCTION`, `PROCEDURE`, `TRIGGER`, `EVENT TRIGGER`, `VIEW`, `MATERIALIZED VIEW`,
+     `EXTENSION`, `ACL`, `RULE`, `POLICY`, `TYPE`, any other schema and any `OWNER` change, is rejected. Write the
+     remaining entries to a list file; restore and BAK-4 both use exactly that list.
+  2. **Empty the preview database:** `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` as the app role.
+  3. **Restore** with `pg_restore --dbname=<preview> --no-owner --no-privileges --exit-on-error
+     --single-transaction --use-list=<list>`, under the same size limits as the archive, and a 10-minute timeout
+     (`SIGTERM`, then `SIGKILL`).
+  4. **Check** there: `schema_migrations` gives the schema version; every table in `EXPECTED_TABLES` exists; the
+     admin row's hash passes AUTH-2; foreign keys hold (the restore re-created them); every upload the data
+     references is in the archive.
+  5. **Clean up** in a `finally` (step 2's statements) and release the lock. A process also empties the preview
+     database at startup, after a preview cut short by a crash.
+
+  The app role is not a superuser (DATA-11), so even a dump that passes the allowlist can only create and fill
+  tables in the two databases that role owns.
 
   `action=restore` re-uploads the archive and MUST run the full preview validation on that upload again before it
   changes anything. It never relies on an earlier preview, so there is no preview token or server-side state
@@ -1043,7 +1080,8 @@ agt_<app_snake>/
        example `agt-calendar.sqlite.restore-old-2026-11-10T06-30-59-123Z` and `uploads.restore-old-…`, so they never
        collide with a path an earlier restore left behind.
      - Postgres: close the `pg.Pool` (`await pool.end()`), run `pg_restore --clean --if-exists --single-transaction
-       --no-owner --use-list=<filtered TOC>` (see below), and create a new pool. Then rename the uploads directories
+       --no-owner --no-privileges --exit-on-error --use-list=<list>` with the list the preview wrote from the
+       allowlist (BAK-3), and create a new pool. Then rename the uploads directories
        as for SQLite.
   5. Run pending migrations, then a **health check** on the restored data: `PRAGMA integrity_check` returns `ok`
      and `PRAGMA foreign_key_check` returns no rows (Postgres: the restore committed, and `SELECT 1` works on the new
@@ -1067,12 +1105,10 @@ agt_<app_snake>/
 
   The log store is left untouched, and the restore itself is audited (LOG-17).
 
-  Postgres apps MUST NOT restore anything into the `logs` or `control` schemas, even from a dump that contains them.
-  Write the dump's table of contents with `pg_restore --list`, remove the lines of the `SCHEMA - logs` and
-  `SCHEMA - control` entries and every line whose schema field is `logs` or `control` (e.g. `218; 1259 16393 TABLE logs audit_log agt_<app_snake>` and the matching
-  `TABLE DATA logs …` lines), and pass the rest with `--use-list`. `--exclude-schema=logs` alone is not enough
-  for `pg_restore`: it skips the objects in the schema but still runs `DROP SCHEMA IF EXISTS logs`, which fails
-  the restore.
+  Postgres apps MUST NOT restore anything except what BAK-3's allowlist keeps: never the `logs` or `control`
+  schemas, and never the `SCHEMA - public` entry (restoring it fails with "schema public already exists"). Exclusion
+  flags are not a substitute: `--exclude-schema=logs` skips the objects in the schema but still runs
+  `DROP SCHEMA IF EXISTS logs`, which fails the restore.
 - **BAK-10** **Rollback.** If step 4, 5 or 6.1 of BAK-4 fails, the app rolls back before releasing the lock: SQLite renames
   the set-aside files back and reopens them; Postgres restores the pre-restore backup's dump with the same
   `pg_restore` command; both rename the uploads back. It then runs the step 5 health check again. If that passes,
@@ -1104,9 +1140,9 @@ agt_<app_snake>/
 
 - **BAK-5** Restore MUST NEVER write `config.yaml`. If the backup contains one, the preview shows a line diff
   and offers it for download; the README explains how to put it in place by hand.
-- **BAK-6** Postgres apps run `pg_dump`/`pg_restore` as child processes with the password in the `PGPASSWORD`
-  environment variable of the child (never on the command line), and the client version MUST be ≥ the server
-  major version.
+- **BAK-6** Postgres apps run `pg_dump`/`pg_restore` as child processes, as the app role (never a superuser,
+  DATA-11), with the password in the `PGPASSWORD` environment variable of the child (never on the command line), and
+  the client version MUST be ≥ the server major version.
 
 ## 13. Logging
 
@@ -1610,7 +1646,10 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
 
   Because `./config.yaml` is bind-mounted, the README tells operators to create it
   (`cp config.example.yaml config.yaml`) before the first `docker compose up`.
-- **DEP-3** Postgres apps add a database service and wire it up. Do not publish the database port.
+- **DEP-3** Postgres apps add a database service and wire it up. Do not publish the database port. The image's
+  bootstrap superuser (`postgres`) is used only by the init script on first start; the app connects as the
+  non-superuser `agt_<app_snake>` (DATA-11) and never receives the superuser password, which lives in `.env.db`, a
+  file only the `db` service reads.
 
   ```yaml
   services:
@@ -1624,16 +1663,16 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
     db:
       image: postgres:18-bookworm
       restart: unless-stopped
+      env_file: .env.db                      # POSTGRES_PASSWORD (the bootstrap superuser's) only
       environment:
-        POSTGRES_DB: agt_<app_snake>
-        POSTGRES_USER: agt_<app_snake>
-        POSTGRES_PASSWORD: ${AGT_<APP>_DB_PASSWORD:?Set AGT_<APP>_DB_PASSWORD in .env}
+        AGT_<APP>_DB_PASSWORD: ${AGT_<APP>_DB_PASSWORD:?Set AGT_<APP>_DB_PASSWORD in .env}
       volumes:
         - <app>-db:/var/lib/postgresql
+        - ./deploy/postgres-init:/docker-entrypoint-initdb.d:ro
       security_opt:
         - no-new-privileges:true
       healthcheck:
-        test: ["CMD-SHELL", "pg_isready -U agt_<app_snake> -d agt_<app_snake>"]
+        test: ["CMD-SHELL", "pg_isready -U postgres -d agt_<app_snake>"]
         interval: 10s
         timeout: 5s
         retries: 5
@@ -1642,6 +1681,23 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
     <app>-data:
     <app>-db:
   ```
+
+  `deploy/postgres-init/10-app-role.sh` (run once, when the volume is empty):
+
+  ```sh
+  #!/bin/sh
+  set -eu
+  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
+    -v app_password="$AGT_<APP>_DB_PASSWORD" <<'SQL'
+  CREATE ROLE agt_<app_snake> LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD :'app_password';
+  CREATE DATABASE agt_<app_snake> OWNER agt_<app_snake>;
+  CREATE DATABASE agt_<app_snake>_preview OWNER agt_<app_snake>;
+  SQL
+  ```
+
+  `.env.db.example` holds one line, `POSTGRES_PASSWORD=`, with a comment that it is the database superuser's
+  password, needed only by the `db` container and for maintenance with `docker compose exec db psql -U postgres`.
+  `.env.db` is covered by REPO-2's `.env.*` rule and never included in backups.
 
 - **DEP-4** `.env.example` documents each variable with comments, including the first-run instructions:
 
@@ -1698,8 +1754,9 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   Postgres apps add: install PostgreSQL `<major>` from the PGDG apt repository
   (`sudo apt-get install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh`,
   then `sudo apt-get install -y postgresql-<major>`), create the role and database
-  (`sudo -u postgres createuser --pwprompt agt_<app_snake>` and
-  `sudo -u postgres createdb --owner agt_<app_snake> agt_<app_snake>`), put the password in `.env` as
+  (`sudo -u postgres createuser --pwprompt --no-superuser --no-createdb --no-createrole agt_<app_snake>`,
+  `sudo -u postgres createdb --owner agt_<app_snake> agt_<app_snake>` and
+  `sudo -u postgres createdb --owner agt_<app_snake> agt_<app_snake>_preview`), put the password in `.env` as
   `AGT_<APP>_DB_PASSWORD`, and add `After=postgresql.service` / `Wants=postgresql.service` to the unit.
 - **DEP-7** `deploy/agt-<app>.service`:
 
@@ -1788,8 +1845,9 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
 - **TEST-3** Client tests run in plain Node without a DOM; stub `globalThis.window` / `localStorage` where
   needed. Server tests use `createTestServer()` from `server/test/helpers.ts`, which creates a temp data dir,
   a cheap ALTCHA cost, and returns `{ app, context, close() }`; tests call `app.inject()` and close servers in
-  `after()`. Postgres apps create a unique schema per test server in the database given by
-  `AGT_<APP>_TEST_DATABASE_URL` and drop it on close.
+  `after()`. Postgres apps create a unique database per test server, and its preview database, through the server given by
+  `AGT_<APP>_TEST_DATABASE_URL` (a role with `CREATEDB`, used only by tests), and drop both on close; the app
+  inside the test connects as a non-superuser role, as in production.
 - **TEST-4** Required test coverage, at minimum:
   - first-run setup: a setup password longer than 1024 characters stops startup while no admin exists (AUTH-5);
     a username that is empty after trimming, or 65 characters long, is rejected with `400` (AUTH-3);
@@ -1844,8 +1902,14 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
     each roll back and leave the data, the settings and the sessions as they were; a failure injected into deleting
     the set-aside paths still returns `200`, lists the paths as warnings and releases the lock; a failure injected into the rollback leaves the app in maintenance with `restore-failed.json`
     written, and a restart then refuses to start;
-  - Postgres apps: a backup's dump has no entries in the `logs` schema, and a restore, including one from a dump
-    that does contain the `logs` schema, leaves the log rows and `log_meta` unchanged (BAK-2, BAK-4, LOG-17);
+  - Postgres apps: a backup's dump has entries only in `public`, and a restore, including one from a dump that does
+    contain the `logs` schema, leaves the log rows and `log_meta` unchanged (BAK-2, BAK-4, LOG-17);
+  - Postgres preview (BAK-3): dumps that contain a function, a trigger, a view, an extension, an event trigger, an
+    unexpected schema, an unknown table or an ACL entry are each rejected with `422` before anything is restored; a
+    dump with a newer schema version, a missing table or a bad admin hash is rejected after the preview restore; the
+    preview database is empty after every preview, including a failed or timed-out one; a second preview at the same
+    time gets `409`; the live data is unchanged by any preview;
+  - Postgres role (DATA-11): the app refuses to start when connected as a superuser;
   - migrations from an empty database and from each released schema version;
   - translation completeness for public and admin strings, including a string in every locale for every standard
     and app-specific `error` code and field `code` (I18N-6);

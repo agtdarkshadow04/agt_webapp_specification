@@ -43,6 +43,16 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - **Setup password and username (AUTH-3, AUTH-5, SRV-8, #45):** at startup, while no admin exists, refuse to start if
   `AGT_<APP>_SETUP_PASSWORD` is longer than 1024 characters. Reject a username that is empty after trimming or longer
   than 64 characters with `400 validation_failed`. Add the TEST-4 cases.
+- **Postgres role, dump scope and preview (DATA-11, BAK-2, BAK-3, BAK-4, BAK-6, DEP-3, DEP-6, TEST-3, #54, #55):**
+  - Connect as the non-superuser `agt_<app_snake>` and refuse to start as a superuser. Docker: use the image's
+    `postgres` superuser only in `deploy/postgres-init/10-app-role.sh`, keep its password in `.env.db` (read only by
+    the `db` service), and create the role, `agt_<app_snake>` and `agt_<app_snake>_preview`. Local: create the role
+    with `--no-superuser --no-createdb --no-createrole` and also the preview database. Existing Docker installs move
+    their data to a new role by hand (backup, recreate the volume, restore).
+  - `pg_dump --schema=public --no-owner --no-privileges` instead of excluding `logs` and `control`.
+  - The preview checks the dump's table of contents against the BAK-3 allowlist, restores it into the preview
+    database (`database.previewName`), runs the checks there and empties it afterwards. Restore uses the same list.
+  - Tests use a database per test server instead of a schema; add the allowlist, preview and superuser tests.
 - **Control migrations and startup order (BAK-12, DATA-11, #57):** Postgres apps create the `control` schema with
   numbered `CONTROL_MIGRATIONS` (`server/migrations/control/`, recorded in `control.schema_migrations`) instead of
   `IF NOT EXISTS` statements, and run every startup migration under the migration lock
@@ -117,6 +127,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- BAK-3: a Postgres preview restores the dump into a separate preview database to check it, after an allowlist of
+  table-of-contents entries; DATA-11, DEP-3, DEP-6: the app's Postgres role is never a superuser, and Docker keeps
+  the bootstrap superuser's password away from the app; BAK-2: dumps contain only the `public` schema (#54, #55).
 - BAK-12, DATA-11: the control schema is versioned with its own migrations, and processes starting together set up
   and migrate one at a time under one named migration lock (#57).
 - BAK-11: the recovery session is recorded when a restore starts, expires with the original session, and also covers a
