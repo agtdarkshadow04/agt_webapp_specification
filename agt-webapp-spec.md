@@ -140,6 +140,25 @@ Add a row (next free port) when you create an app.
 - **STACK-3** Do not add a CSS framework (Tailwind, Bootstrap, …) or a component library. Use plain CSS with
   the AGT design tokens ([§15](#15-visual-design-system)).
 - **STACK-4** Commit `package-lock.json`. Install with `npm ci`.
+- **STACK-5** **Supported versions.** The versions in STACK-1 are the release lines this spec version requires;
+  raising one is a major spec change. Within them, apps SHOULD only use versions that their maintainers still fix:
+
+  | Dependency | Supported means | Check |
+  | --- | --- | --- |
+  | Node.js | An Active or Maintenance LTS line that is not past its end-of-life date | [nodejs/Release schedule](https://github.com/nodejs/Release#release-schedule) |
+  | Vite | The latest minor of a major that Vite still patches: the current major, or the latest minor of the previous or second-to-last major (the latter gets security patches only). Use a range that resolves to that minor, e.g. `^6.4` rather than `^6.2.3` | [Vite releases](https://vite.dev/releases#supported-versions) |
+  | Other dependencies (TypeScript, Fastify, React, …) | The latest minor and patch of the major in use; maintainers rarely patch older lines | The package's release notes |
+
+  A dependency whose required line is no longer supported is reported in the dependency review (STACK-6) and, if it
+  is required by this spec, as an issue on the spec repository so the next major spec version can raise it.
+- **STACK-6** **Dependency review.** Apps SHOULD review their dependencies:
+  - in every release PR (VER-12): list the `package-lock.json` changes since the last release (new packages, major
+    version changes) and the result of `npm audit --omit=dev`, in the PR description;
+  - when a Node.js line changes LTS status (each April and October) and at least every six months: check each
+    STACK-1 dependency against STACK-5, and record the result in an issue or the next release PR.
+
+  Updating within the allowed ranges is a PATCH or MINOR release of the app (VER-4, VER-5); moving to a new major of
+  a dependency follows the usual version rules for its effect on installations.
 
 ## 4. Repository layout
 
@@ -1572,7 +1591,8 @@ higher level.
   body is that version's CHANGELOG section. Mark release candidates as pre-releases. Tags are never moved or
   deleted: a bad release is fixed by a new patch release.
 - **VER-12** Agents prepare releases but do not publish them on their own. The **release PR** only changes the
-  version's CHANGELOG heading from `Unreleased` to the release date. Agents create the tag and the GitHub Release
+  version's CHANGELOG heading from `Unreleased` to the release date; its description SHOULD carry the dependency
+  review (STACK-6). Agents create the tag and the GitHub Release
   only when the maintainer explicitly asks for that release.
 - **VER-13** Installations run released versions. The README's install and upgrade steps check out a release tag,
   not `main` (DEP-5, DEP-6, DEP-9), and tell operators to read the CHANGELOG upgrade notes and take a backup

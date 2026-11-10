@@ -19,6 +19,10 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   Games.
 - Header rows **Reference version** (AGT Event Calendar 2.2.0, pinned to a commit until it is tagged) and **Assets**
   (#7).
+- STACK-5: which versions of Node.js, Vite and other dependencies count as supported, and that apps SHOULD only
+  use supported versions within the STACK-1 lines (#12).
+- STACK-6: a dependency review (lockfile changes and `npm audit`) in every release PR, and a support review at each
+  Node.js LTS change and at least every six months (SHOULD) (#12).
 - UI-3: the community `NMS Alphabet` font is not an AGT asset, because its FontStruct licence prohibits hosting
   it as a web font.
 
@@ -26,6 +30,7 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 - §0: "when the spec is silent" refers to the reference implementation at the pinned **Reference version**, not its
   latest commit (#7).
+- VER-12: the release PR description SHOULD carry the dependency review (STACK-6).
 - UI-5, UI-14: brand assets are copied from the spec repository's `assets/`, not from the reference implementation.
 
 ## [5.1.0] - 2026-11-10

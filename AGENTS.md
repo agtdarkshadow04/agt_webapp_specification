@@ -37,6 +37,9 @@ python3 scripts/check_spec.py   # links, requirement IDs, header version vs CHAN
 - **Upgrade notes** go in every major version's CHANGELOG section: what an app must change to comply.
 - **Readers are agents:** say exactly what to do, with names, paths, values and rule IDs. Use MUST/SHOULD/MAY
   (RFC 2119). Prefer tables and short rules to prose.
+- **Dependency support review** (STACK-5, STACK-6): when a Node.js line changes LTS status (each April and
+  October) and at least every six months, check the STACK-1 versions against their maintainers' support policies.
+  Raising a required version is a major spec change; open an issue for it.
 - **The reference implementation** is `agtdarkshadow04/agt_event_calendar`. Rules should match what it does, or
   its `AGENTS.md` should list the gap. New rules usually mean a follow-up issue there.
 - Commit messages: short imperative sentence.
