@@ -266,6 +266,7 @@ agt_<app_snake>/
   | Status | `error` | When |
   | --- | --- | --- |
   | 400 | `invalid_request`, `validation_failed`, `captcha_failed` | Schema or semantic validation failed |
+  | 400 | `unknown_setting`, `invalid_setting` | Settings update with a key not in `EDITABLE_SETTINGS`, or an invalid value (CFG-8) |
   | 401 | `unauthorized`, `invalid_credentials`, `invalid_setup_password` | No/invalid session or wrong password |
   | 403 | `csrf`, `<feature>_closed` | Missing CSRF header; feature disabled by the admin |
   | 404 | `not_found` | Unknown route, unknown or invisible resource |
@@ -277,6 +278,12 @@ agt_<app_snake>/
   | 429 | `rate_limited` | Rate limit hit; message says when to retry |
   | 500 | `internal` | Unexpected error |
   | 503 | `setup_password_missing` | First run, but no setup password configured |
+
+  The table is the standard set, not an exhaustive list. Use a standard code whenever its situation applies.
+  An app MAY add its own codes for situations the table does not cover (e.g. `file_required` for a multipart
+  request without its file part); they follow the same snake_case form and status rules. The `ErrorBody`
+  schema's `error` property SHOULD list every code the app returns, standard and app-specific, in its OpenAPI
+  `description`.
 
 - **API-7** Timestamps in API payloads are ISO 8601 UTC strings ending in `Z`. Dates without a time are
   `YYYY-MM-DD`.
@@ -397,7 +404,8 @@ agt_<app_snake>/
   | `.env` | Secrets and first-run bootstrap values only | Docker: `env_file: .env`. Local: `/etc/agt-<app>/.env` via systemd `EnvironmentFile=` |
   | Dashboard settings | Keys listed in `EDITABLE_SETTINGS`, stored in the `settings` table | Database |
 
-- **CFG-2** Environment variables are limited to this set. Do not add others without changing this spec.
+- **CFG-2** Environment variables are this set plus app-specific secrets (see below). Everything else that is not
+  secret goes in `config.yaml` (CFG-1), never in an environment variable.
 
   | Variable | Set by | Purpose |
   | --- | --- | --- |
@@ -407,10 +415,12 @@ agt_<app_snake>/
   | `AGT_<APP>_DATABASE_HOST` | `docker-compose.yml` | Postgres apps only; default host when `database.host` is not in `config.yaml` |
   | `AGT_<APP>_SERVER_HOST` | Dockerfile | Listen address when `server.host` is not in `config.yaml` (the Dockerfile sets `0.0.0.0`; DEP-1) |
   | `AGT_<APP>_STATIC_DIR` | Development only | Override path to `dist/` |
+  | `AGT_<APP>_TEST_DATABASE_URL` | Developer / CI | Postgres apps only; database for server tests (TEST-3). Never read by the production server |
   | `NODE_ENV` | Dockerfile / systemd unit | `production` |
 
-  Other secrets the app needs (third-party keys are rare, because there are no outbound requests) follow the
-  `AGT_<APP>_<NAME>` pattern and belong in `.env`.
+  **App-specific secrets.** An app MAY add environment variables only for secrets the operator supplies (SEC-8;
+  rare, because there are no outbound requests). Name them `AGT_<APP>_<NAME>`, put them in `.env`, and list each
+  one in `.env.example` (DEP-4) and in the README's configuration reference, with what it is for.
 - **CFG-3** `config.yaml` is validated at startup against a TypeBox schema in `server/config.ts`. Every key is
   optional and has a default. Unknown keys and invalid values MUST stop the server with a message naming the
   key (e.g. `Invalid config.yaml: server.prot: Unexpected property`). A missing file means "all defaults" and
