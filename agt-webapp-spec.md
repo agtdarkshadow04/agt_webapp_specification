@@ -216,7 +216,8 @@ agt_<app_snake>/
 │   └── test/                 # *.test.ts + helpers.ts (+ fixtures/)
 └── src/
     ├── main.tsx  App.tsx     # public UI root
-    ├── styles.css            # public styles; tokens block from §15
+    ├── agt-base.css          # AGT base stylesheet, copied unmodified from the spec repository (UI-16)
+    ├── styles.css            # public styles; imports agt-base.css first
     ├── translations.ts       # public UI strings, all locales
     ├── components/           # public components; useDialog.ts; Icons.tsx
     ├── lib/                  # framework-free logic + *.test.ts (validation.ts, api.ts, client.ts, settings.ts …)
@@ -1126,8 +1127,9 @@ All AGT apps MUST look like one family.
 
 ### 15.1 Tokens
 
-- **UI-1** `src/styles.css` MUST start with this block, verbatim. `src/admin/admin.css` imports or repeats
-  it. Use tokens (`var(--…)`) instead of raw colours in component CSS; add new tokens to this spec first.
+- **UI-1** These tokens are defined by the AGT base stylesheet (UI-16), which apps import unchanged; the block
+  below is a copy of its `:root` rule for reference. The admin entry imports `src/styles.css` (and with it the base
+  stylesheet) before `src/admin/admin.css`. Use tokens (`var(--…)`) instead of raw colours in component CSS; add new tokens to this spec first.
 
   ```css
   :root {
@@ -1205,7 +1207,7 @@ All AGT apps MUST look like one family.
 - **UI-5** Use the official logo `public/AgtOfficialLogo.webp` as the favicon and in the header brand lockup
   (decorative: `alt=""` and `aria-hidden="true"` next to visible brand text). Copy brand assets from the spec
   repository's `assets/` (UI-15); never hotlink them.
-- **UI-15** **Asset sources and licences.** The logo and fonts named in UI-3, UI-5 and UI-14 come from
+- **UI-15** **Asset sources and licences.** The logo and fonts named in UI-3, UI-5 and UI-14, and the base stylesheet (UI-16), come from
   [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/main/assets/README.md) in the spec's source repository, at the tag of the spec version the app follows.
   Copy them unmodified, under the same file names, and check each file against the SHA-256 in `assets/README.md`. Apps
   SHOULD ship the licence files listed there next to their fonts (`public/fonts/`), and SHOULD credit every bundled
@@ -1218,8 +1220,8 @@ All AGT apps MUST look like one family.
 ### 15.3 Page chrome
 
 - **UI-6** `html, body { min-width: 300px }`. The body background is `--bg` with two subtle radial gradients
-  and a faint 40 px grid overlay (`body::before`, fading out towards the bottom), as in the reference
-  `styles.css`.
+  and a faint 40 px grid overlay (`body::before`, fading out towards the bottom), as defined in the base stylesheet
+  (UI-16).
 - **UI-7** Public layout: a `site-header` with the brand lockup (logo, "Alliance of Galactic Travellers"
   brand name, product name) and a row of round icon buttons on the right (each with `aria-label` and
   `title`), then `<main id="main-content">`, then a `site-footer`. Include a support link to
@@ -1234,7 +1236,7 @@ All AGT apps MUST look like one family.
 
 ### 15.4 Components
 
-- **UI-9** Use these class names and behaviours from the reference CSS (copy, don't reinvent):
+- **UI-9** Use these classes from the base stylesheet (UI-16); don't restyle or reinvent them:
 
   | Class | Use |
   | --- | --- |
@@ -1249,8 +1251,20 @@ All AGT apps MUST look like one family.
 - **UI-10** Focus: `outline: 2px solid var(--agt-orange); outline-offset: 3px` on `:focus-visible` for all
   interactive elements. Never remove outlines without this replacement. Selection colour: black on
   `--agt-orange`. Scrollbars: thin, `--agt-red-orange` thumb.
-- **UI-11** Transitions are 0.15 s ease on colour, background, border, transform and shadow. Wrap all
-  animation in a `@media (prefers-reduced-motion: reduce)` override that disables it.
+- **UI-11** Transitions are 0.15 s ease on colour, background, border, transform and shadow. The base stylesheet
+  (UI-16) disables all animation and transitions under `@media (prefers-reduced-motion: reduce)`; app CSS keeps
+  its own animations within that override.
+- **UI-16** **Base stylesheet.** The normative CSS is the file `assets/css/agt-base.css` in the spec's source
+  repository, at the tag of the spec version the app follows. It contains the UI-1 tokens, the UI-3 and UI-14
+  `@font-face` rules, the UI-6 page background, the UI-9 components, the UI-10 focus, selection and scrollbar
+  styles, the UI-11 reduced-motion override and the `.portal-glyphs` class. Apps MUST:
+  - copy it unmodified to `src/agt-base.css` (its SHA-256 is listed in `assets/README.md`, UI-15);
+  - import it first, with `@import './agt-base.css';` as the first rule of `src/styles.css`;
+  - put app-specific rules after it, never edit it, never redefine its tokens, and never override its rules for
+    the UI-9 classes (add a modifier class for a variant instead).
+
+  A change to the base stylesheet is a spec change (SPEC-4); apps pick it up when they move to the new spec
+  version.
 - **UI-12** Responsive breakpoints: `1180px`, `760px`, `520px` (public) and `640px` (forms/admin). Layouts
   MUST work from 300 px wide without horizontal page scrolling; wide tables scroll inside their container.
 - **UI-13** Media and sound never auto-play with sound. Any ambient audio (like the AGT anthem) is off until

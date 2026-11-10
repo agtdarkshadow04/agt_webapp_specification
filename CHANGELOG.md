@@ -45,6 +45,11 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   (`npm run test:e2e`) and run it in CI, add the proxy `Secure` cookie test to the server tests, and before every
   release run the manual accessibility checklist, both installation smoke tests and (from the second release on)
   the upgrade and rollback test. Record all results in the release PR; never tag a release with a failing one.
+- **Base stylesheet (UI-16, #7):** copy `assets/css/agt-base.css` to `src/agt-base.css` unmodified and make
+  `@import './agt-base.css';` the first rule of `src/styles.css`. Then delete from your own CSS everything the base
+  file now defines: the `:root` tokens, the three `@font-face` rules, `html`/`body`/`body::before`, selection,
+  scrollbars, `:focus-visible`, `.sr-only`, the `.button`, `.field`, `.modal-*`, note and `.admin-notice` rules,
+  `.portal-glyphs`/`.portal-code-value` and the reduced-motion override. Keep app-specific variants as modifier classes.
 - **Translated errors (I18N-6, #9):** add a translation in every locale for every error code and field code, add
   `src/lib/errors.ts` with `errorText()` and `fieldErrorText()`, and show errors only through them (FE-5). Add the
   TEST-4 translation and error body checks.
@@ -58,6 +63,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - BAK-10 (rollback) and BAK-11 (failed rollback: maintenance, marker file, refusal to start) (#5).
 - API-6: the error body's `params`, and `code` and `params` on every `FieldError`, with a standard table of field
   codes (#9).
+- `assets/css/agt-base.css` and UI-16: the normative CSS (tokens, fonts, page background, shared components, focus,
+  scrollbars, reduced motion) as a pinned file, extracted from the reference implementation with the 5.2.0 token.
+  `scripts/check_spec.py` checks its hash and that its `:root` rule is the UI-1 block (#7).
 - STACK-7: apps record an install-script decision for every dependency in `allowScripts`, because npm 11.20 and
   newer skips unapproved install scripts (#12).
 - I18N-6: clients translate every error code and field code in all locales; the English `message` is only a fallback
@@ -70,6 +78,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - BAK-3: `action=restore` re-validates its upload; there is no state between preview and restore (#5).
 - BAK-4: restore is an ordered procedure with draining, a database or pool reopen, and a post-restore health check
   (#5).
+- UI-1, UI-6, UI-9, UI-11, UI-15: the tokens, background and components come from the base stylesheet instead of
+  "the reference CSS"; UI-1's block is a reference copy of its `:root` rule (#7).
 - STACK-1: Node.js 26 LTS (was 24), TypeScript `~7.0` (was `~5.8`), Vite 8 with `@vitejs/plugin-react` 6 (was Vite 6),
   esbuild `^0.28`. DEP-1, DEP-6 and TEST-1 use Node.js 26 (#12).
 - §19.1: TEST-6 to TEST-9 are MUST instead of SHOULD and gate every release; TEST-2: CI also runs `npm run test:e2e`;

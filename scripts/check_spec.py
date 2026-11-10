@@ -61,6 +61,14 @@ for file in sorted(assets_dir.rglob('*')):
     if file.is_file() and rel != 'README.md' and not rel.startswith('licenses/') and rel not in listed:
         problems.append(f'assets/{rel} is not listed in assets/README.md')
 
+# The base stylesheet's :root rule must be the UI-1 token block, byte for byte (after removing the indent).
+ui1 = re.search(r'\*\*UI-1\*\*.*?```css\n(.*?)```', spec, re.S)
+base_css = assets_dir / 'css' / 'agt-base.css'
+if ui1 and base_css.is_file():
+    block = '\n'.join(line[2:] if line.startswith('  ') else line for line in ui1.group(1).splitlines())
+    if block.strip() not in base_css.read_text(encoding='utf-8'):
+        problems.append('assets/css/agt-base.css does not contain the UI-1 :root block verbatim')
+
 for problem in problems:
     print(problem)
 print(f'{len(defined)} requirement IDs, {len(anchors)} headings, {len(listed)} assets: ' + ('FAILED' if problems else 'OK'))
