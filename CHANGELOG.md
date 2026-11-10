@@ -14,6 +14,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - TEST-4: Postgres apps test that backups contain no `logs` objects and that a restore leaves the log store
   unchanged.
 - API-13: the OpenAPI test SHOULD assert each operation's `security` value.
+- CFG-2: `AGT_<APP>_TEST_DATABASE_URL`, the test database of Postgres apps (TEST-3).
+- API-6: `400 unknown_setting` and `400 invalid_setting` (CFG-8) in the table of standard codes.
 
 ### Fixed
 
@@ -26,6 +28,12 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - API-11 gave the wrong OpenAPI `security` for first-run setup and login (#8): setup fell under `[]`, hiding the
   CSRF header it needs (SEC-5), and login fell under the admin-write value, claiming a session it cannot need
   (AUTH-9). Both now use `[{ csrfHeader: [] }]`, and API-11 has a table of the four `security` values.
+- The lists of environment variables and error codes were incomplete and contradicted themselves (#13). CFG-2 said
+  the variables were "limited to this set" but did not list `AGT_<APP>_TEST_DATABASE_URL`, which TEST-3 uses,
+  and then allowed other secrets anyway. It now lists that variable and has an explicit rule for app-specific
+  secrets (operator-supplied secrets only, listed in `.env.example` and the README). API-6 now says its table is
+  the standard set, not an exhaustive list: apps MAY add codes for other situations and SHOULD list every code in
+  the `ErrorBody` schema's description.
 
 ## [5.0.0] - 2026-11-10
 
