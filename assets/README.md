@@ -31,9 +31,8 @@ link, as in the table above.
 
 - **Who wrote this table.** The maintainer supplied the sources and licences. The credits are each font's embedded
   authors plus Hello Games, the maker of No Man's Sky, whose typeface, portal glyphs and Expedition alphabet the
-  three game fonts reproduce. The Futura licence text was read from its source repository. The Miraheze and
-  FontStruct pages could not be opened when this table was written, so the CC BY-NC-SA 4.0 and FontStruct licence
-  entries are as given by the maintainer, not checked against those pages.
+  three game fonts reproduce. The maintainer verified every source and licence link against
+  its page, and the Futura licence text was also read from its source repository.
 - **NMS Futura** is described by NMSCD as datamined from No Man's Sky's game files and "based on the Futura Pro
   font family". The OFL covers NMSCD's kerned version; it cannot grant rights that the original font's owners did
   not.
