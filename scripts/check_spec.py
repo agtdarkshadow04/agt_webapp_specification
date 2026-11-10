@@ -58,7 +58,7 @@ for path, digest in sorted(listed.items()):
         problems.append(f'SHA-256 of assets/{path} does not match assets/README.md')
 for file in sorted(assets_dir.rglob('*')):
     rel = file.relative_to(assets_dir).as_posix()
-    if file.is_file() and rel != 'README.md' and not rel.startswith('licenses/') and rel not in listed:
+    if file.is_file() and rel != 'README.md' and rel not in listed:
         problems.append(f'assets/{rel} is not listed in assets/README.md')
 
 # The base stylesheet's :root rule must be the UI-1 token block, byte for byte (after removing the indent).
