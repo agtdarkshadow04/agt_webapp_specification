@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Spec version** | 5.2.0 |
+| **Spec version** | 6.0.0 |
 | **Status** | Normative |
 | **Audience** | AI coding agents that design, build, review or maintain AGT web applications |
 | **Source** | [`agtdarkshadow04/agt_webapp_specification`](https://github.com/agtdarkshadow04/agt_webapp_specification), released as tags `vX.Y.Z` (SPEC-1) |
@@ -247,8 +247,9 @@ agt_<app_snake>/
   `index.html`, `GET /admin` → `admin.html`, redirect `/admin/` → `/admin`. Hashed files under `/assets/` get
   `Cache-Control: public, max-age=31536000, immutable`; everything else gets `no-store`.
 - **SRV-10** Unknown routes return `404` with the error body, not an HTML page.
-- **SRV-11** `GET /api/health` MUST run a trivial database query and return `200 { "status": "ok" }`. It is
-  public, unauthenticated, not rate limited, and used by the Docker healthcheck.
+- **SRV-11** `GET /api/health` MUST run a trivial database query and return `200 { "status": "ok" }`, or
+  `200 { "status": "maintenance" }` without querying while a restore runs (BAK-8). It is public, unauthenticated,
+  not rate limited, and used by the Docker healthcheck.
 
 ## 6. REST API and OpenAPI
 
@@ -304,6 +305,7 @@ agt_<app_snake>/
   | 429 | `rate_limited` | Rate limit hit; message says when to retry |
   | 500 | `internal` | Unexpected error |
   | 503 | `setup_password_missing` | First run, but no setup password configured |
+  | 503 | `maintenance` | A restore is running, or a write waited too long for a backup (BAK-8); sent with `Retry-After` |
 
   The table is the standard set, not an exhaustive list. Use a standard code whenever its situation applies.
   An app MAY add its own codes for situations the table does not cover (e.g. `file_required` for a multipart
@@ -733,14 +735,16 @@ agt_<app_snake>/
 
 ## 12. Backup and restore
 
+### 12.1 Archive format
+
 - **BAK-1** Every app MUST provide **Backup & restore** in the admin dashboard, backed by
   `GET /api/admin/backup` (download) and `POST /api/admin/restore` (multipart `backup` file +
   `action=preview|restore`).
-- **BAK-2** A backup is one ZIP named `agt-<app>-backup-<ISO timestamp with : and . replaced by ->.zip`:
+- **BAK-2** A backup is one ZIP named `agt-<app>-backup-<ISO timestamp with : and . replaced by ->.zip`, for example
+  `agt-event-calendar-backup-2026-11-10T06-30-59-123Z.zip`:
 
   ```text
-  manifest.json        # { format: "agt-<app>-backup", formatVersion, appVersion, schemaVersion,
-                       #   createdAt, files: [{ path, size, sha256 }] }
+  manifest.json        # see below
   database.sqlite      # SQLite apps: online-backup snapshot, sessions deleted, VACUUMed, journal_mode DELETE
   database.dump        # Postgres apps: pg_dump --format=custom --exclude-schema=logs --exclude-table-data=sessions
   uploads/<uuid>.<ext> # every stored upload
@@ -750,21 +754,96 @@ agt_<app_snake>/
   `.env` and the log store (LOG-17) are never included. For Postgres apps the log store is the `logs` schema of
   the same database (LOG-1), so `pg_dump` MUST be given `--exclude-schema=logs`. The README warns that backups contain the admin
   password hash and generated secrets and must be stored securely.
+
+  `manifest.json` (UTF-8 JSON) has exactly these fields:
+
+  | Field | Type | Value |
+  | --- | --- | --- |
+  | `format` | string | `agt-<app>-backup` |
+  | `formatVersion` | integer | `1` (BAK-7) |
+  | `appVersion` | string | The app's SemVer version (VER-1) |
+  | `schemaVersion` | integer | Database schema version (DATA-4) |
+  | `createdAt` | string | ISO 8601 UTC, ending in `Z` (API-7) |
+  | `files` | array | One `{ path, size, sha256 }` per archive entry **except `manifest.json` itself** |
+
+  `path` is a relative POSIX path (`/` separators, no leading `/`, no `.` or `..` segments, no backslashes); `size`
+  is the entry's uncompressed length in bytes; `sha256` is 64 lowercase hex digits. Every archive entry other than
+  `manifest.json` MUST be listed, and every listed path MUST exist. Example:
+
+  ```json
+  {
+    "format": "agt-event-calendar-backup",
+    "formatVersion": 1,
+    "appVersion": "2.2.0",
+    "schemaVersion": 2,
+    "createdAt": "2026-11-10T06:30:59.123Z",
+    "files": [
+      { "path": "database.sqlite", "size": 98304, "sha256": "<64 hex digits>" },
+      { "path": "uploads/0b6c2f1e-7d4a-4c1e-9a52-3f0e8d2b6a71.webp", "size": 52144, "sha256": "<64 hex digits>" },
+      { "path": "config.yaml", "size": 812, "sha256": "<64 hex digits>" }
+    ]
+  }
+  ```
+
+- **BAK-7** **Format compatibility.** `formatVersion` changes only when the archive layout or the manifest changes
+  in a way an older app cannot read. An app MUST restore every `formatVersion` from `1` up to its own (older
+  database schemas are migrated, BAK-4) and MUST refuse a newer one with `422 archive_rejected`. A change that
+  makes the app write a new `formatVersion` is a MINOR app release if older backups still restore (VER-4).
+
+### 12.2 Consistency and concurrency
+
+- **BAK-8** **Operation lock.** Each instance has one in-process lock (an instance is one Node.js process, DEP-1,
+  DEP-7) with three states: `idle`, `backup` and `restore`.
+  - A backup or restore that finds the lock not `idle` returns `409 conflict` ("A backup or restore is already
+    running.") without doing anything. The pre-restore backup (BAK-4) runs under the restore's own lock.
+  - **During `backup`:** reads proceed. Every request that writes data (any non-`GET` `/api/` route except
+    `/api/admin/login` and `/api/admin/logout`, and any background job that writes the main database or uploads)
+    waits for the lock to return to `idle`, for up to 30 seconds, and then proceeds. Past 30 seconds it returns
+    `503 maintenance` with `Retry-After: 10`.
+  - **During `restore`:** every `/api/` request except `GET /api/health` returns `503 maintenance` with
+    `Retry-After: 10` and the message "Maintenance in progress. Try again in a moment." `GET /api/health` returns
+    `200 { "status": "maintenance" }`, so Docker does not restart the container mid-restore (SRV-11). Background
+    jobs pause. HTML and static files are still served.
+  - Clients show `503 maintenance` as a non-blocking "Maintenance in progress" notice (FE-5) and retry the request
+    once after `Retry-After`; they never treat it as a sign-out.
+- **BAK-9** **Consistent snapshot.** A backup is created entirely while holding the `backup` lock: the database
+  snapshot (SQLite `db.backup()`; Postgres `pg_dump`) and the copy of `uploads/` are taken with no data write in
+  between, so every upload the snapshot references is in the archive with the content it had at that moment.
+
+### 12.3 Restore
+
 - **BAK-3** Restore MUST first run a **preview** that validates without changing anything: manifest format
-  and checksums, only expected paths, size and entry limits, database integrity (`PRAGMA integrity_check` /
-  `pg_restore --list`), schema version (older → will be migrated; newer → refused), required tables, and
-  every upload through the image checks. The preview reports counts, warnings and how the backup's
-  `config.yaml` differs from the current one. Postgres apps: if the dump's table of contents (`pg_restore --list`)
-  has entries in the `logs` schema (backups made before spec 5.1.0), the preview accepts it with the warning
-  that its log tables will be ignored.
-- **BAK-4** Restore then: writes an automatic pre-restore backup to
-  `<backupsDir>/pre-restore-backup-<timestamp>.zip` and keeps it; replaces the database and uploads so that a
-  failure leaves the instance unchanged (SQLite: prepare files beside the live ones, then rename-swap and
-  reopen `context.db`; Postgres: `pg_restore --clean --if-exists --single-transaction --no-owner
-  --use-list=<filtered TOC>`, see below); runs pending
-  migrations; drops dashboard settings for keys now locked by `config.yaml` and lists them in the report;
-  ends all sessions (the restored admin account replaces the current one) and signs the caller out. The log
-  store is left untouched, and the restore itself is audited (LOG-17).
+  and checksums (BAK-2, BAK-7), only expected paths, size and entry limits, database integrity
+  (`PRAGMA integrity_check` / `pg_restore --list`), schema version (older → will be migrated; newer → refused),
+  required tables, and every upload through the image checks. The preview reports counts, warnings and how the
+  backup's `config.yaml` differs from the current one. Postgres apps: if the dump's table of contents
+  (`pg_restore --list`) has entries in the `logs` schema (backups made before spec 5.1.0), the preview accepts it
+  with the warning that its log tables will be ignored.
+
+  `action=restore` re-uploads the archive and MUST run the full preview validation on that upload again before it
+  changes anything. It never relies on an earlier preview, so there is no preview token or server-side state
+  between the two requests.
+- **BAK-4** Restore then runs these steps in order:
+  1. Validate the upload (BAK-3). On any rejection, stop: nothing has changed.
+  2. Take the `restore` lock (BAK-8). Wait up to 30 seconds for the other requests already in progress to finish; if some are
+     still running, release the lock and return `409 conflict` ("The server is busy. Try again.") without changing
+     anything.
+  3. Write an automatic pre-restore backup to `<backupsDir>/pre-restore-backup-<timestamp>.zip` and keep it.
+  4. Replace the database and the uploads:
+     - SQLite: prepare the new files beside the live ones, checkpoint and close `context.db`, rename the live files
+       aside, rename the new ones into place, and reopen `context.db`.
+     - Postgres: close the `pg.Pool` (`await pool.end()`), run `pg_restore --clean --if-exists --single-transaction
+       --no-owner --use-list=<filtered TOC>` (see below), and create a new pool. Then rename the uploads directories
+       as for SQLite.
+  5. Run pending migrations, then a **health check** on the restored data: `PRAGMA integrity_check` returns `ok`
+     and `PRAGMA foreign_key_check` returns no rows (Postgres: the restore committed, and `SELECT 1` works on the new
+     pool); the schema version is the app's (DATA-4); every table in `EXPECTED_TABLES` exists; every upload the
+     database references exists in `uploads/`.
+  6. On success: drop dashboard settings for keys now locked by `config.yaml` and list them in the report; end all
+     sessions (the restored admin account replaces the current one) and sign the caller out; delete the files set
+     aside in step 4; release the lock.
+
+  The log store is left untouched, and the restore itself is audited (LOG-17).
 
   Postgres apps MUST NOT restore anything into the `logs` schema, even from a dump that contains it. Write the
   dump's table of contents with `pg_restore --list`, remove the line of the `SCHEMA - logs` entry and every line
@@ -772,6 +851,24 @@ agt_<app_snake>/
   `TABLE DATA logs …` lines), and pass the rest with `--use-list`. `--exclude-schema=logs` alone is not enough
   for `pg_restore`: it skips the objects in the schema but still runs `DROP SCHEMA IF EXISTS logs`, which fails
   the restore.
+- **BAK-10** **Rollback.** If step 4 or 5 of BAK-4 fails, the app rolls back before releasing the lock: SQLite renames
+  the set-aside files back and reopens them; Postgres restores the pre-restore backup's dump with the same
+  `pg_restore` command; both rename the uploads back. It then runs the step 5 health check again. If that passes,
+  the restore request returns `500 internal` with the message "The restore failed and was rolled back. Nothing was
+  changed.", the lock returns to `idle`, and a server log `error` (source `backup`) records the cause. Sessions are
+  ended only by a successful restore.
+- **BAK-11** **Failed rollback.** If the rollback itself fails, the app MUST NOT serve the data:
+  - It stays in the `restore` state (every `/api/` request gets `503 maintenance`), writes a server log `error`
+    (source `backup`) naming the pre-restore backup file, and writes the marker file `<dataDir>/restore-failed.json`
+    (`{ "preRestoreBackup": "<file name>", "failedAt": "<ISO 8601>" }`).
+  - The admin who started the restore can still use the **Backup & restore** tab to restore the pre-restore backup
+    (or any other): their session is kept in memory and accepted, despite the maintenance state, for `GET /api/admin/session` and
+    `POST /api/admin/restore` only, until the process exits. A
+    successful restore deletes the marker file and returns to `idle`.
+  - If the process restarts while the marker file exists, it refuses to start (SRV-8) with a message naming the
+    pre-restore backup and the README section that explains how to restore it by hand; the operator deletes the
+    marker file once the data is restored.
+
 - **BAK-5** Restore MUST NEVER write `config.yaml`. If the backup contains one, the preview shows a line diff
   and offers it for download; the README explains how to put it in place by hand.
 - **BAK-6** Postgres apps run `pg_dump`/`pg_restore` as child processes with the password in the `PGPASSWORD`
@@ -960,7 +1057,8 @@ records the outcome, the server log entry records the error. The two share the r
   with `history.replaceState` when normalized.
 - **FE-5** Every load and mutation has visible loading, success and error states. Errors show the server's
   `message` (and per-field `fields` next to the fields). Long operations (import, restore) show a preview
-  first and require an explicit confirm.
+  first and require an explicit confirm. `503 maintenance` is shown as a non-blocking notice and retried once
+  after `Retry-After` (BAK-8).
 - **FE-6** Forms validate with the same `src/lib/validation.ts` functions the server uses, so messages match.
   The server remains the authority.
 - **FE-7** Icons are inline React SVG components in `src/components/Icons.tsx` (`aria-hidden="true"`), never
@@ -1440,6 +1538,16 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   - ALTCHA (if present): valid, replayed, expired;
   - backup round trip; restore preview; tampered checksum rejected; newer schema refused; locked settings
     skipped; `config.yaml` never written; pre-restore backup created;
+  - backup format: the manifest has exactly the BAK-2 fields, lists every entry but itself, and uses safe relative
+    paths; an archive with an unlisted entry, a missing listed entry, a `..` path or a newer `formatVersion` is
+    rejected (BAK-2, BAK-7);
+  - concurrency (BAK-8, BAK-9): a write started during a backup waits and then succeeds, and the backup holds either
+    none or all of that write (database row and upload); a second backup or restore gets `409 conflict`; during a
+    restore every `/api/` route except health returns `503 maintenance` with `Retry-After`, and health returns
+    `{ "status": "maintenance" }`;
+  - failure (BAK-10, BAK-11): a failure injected after the swap rolls back and leaves the data and the sessions as
+    they were; a failure injected into the rollback leaves the app in maintenance with `restore-failed.json`
+    written, and a restart then refuses to start;
   - Postgres apps: a backup's dump has no entries in the `logs` schema, and a restore, including one from a dump
     that does contain the `logs` schema, leaves the log rows and `log_meta` unchanged (BAK-2, BAK-4, LOG-17);
   - migrations from an empty database and from each released schema version;
@@ -1513,8 +1621,7 @@ records the results (VER-12).
   is intact, the migrations ran (server log) and the dashboard shows the new version (VER-2); then roll back as
   *Rolling back* says and check that the previous version runs with the restored data.
 
-Testing backups under concurrent writes depends on a backup consistency rule that the spec does not have yet, so it
-is not listed here.
+Backups under concurrent writes and failures during a restore are covered by server tests (TEST-4, BAK-8 to BAK-11).
 
 ## 20. Documentation
 
@@ -1538,8 +1645,9 @@ is not listed here.
      of LOG-23
   9. **Content safety** (what is accepted and how it is rendered)
   10. **Development** (commands table, project layout table, link to `AGENTS.md` and this spec)
-  11. **Troubleshooting** (refuses to start, setup password missing, locked out, rate limits, proxy/HTTPS;
-      pointing to the Server log tab first)
+  11. **Troubleshooting** (refuses to start, setup password missing, locked out, rate limits, proxy/HTTPS,
+      "maintenance in progress", and recovering from a failed restore by hand with the pre-restore backup and the
+      `restore-failed.json` marker (BAK-11); pointing to the Server log tab first)
 
 ### 20.2 AGENTS.md (for agents)
 
@@ -1697,7 +1805,7 @@ Use this list to review a new app or a large change. Every item must be true or 
 - [ ] Sessions, CSRF header, no CORS, rate limits, CSP and headers (SEC-1..7).
 - [ ] Uploads checked by magic bytes, no SVG; ZIPs read safely; Markdown rendered safely; no outbound requests.
 - [ ] ALTCHA + rate limit + moderation on every anonymous write (§11), or no anonymous writes.
-- [ ] Backup & restore with manifest, preview, pre-restore backup, atomic swap, never writes `config.yaml` (§12).
+- [ ] Backup & restore with the BAK-2 manifest, preview re-run on restore, operation lock and `503 maintenance`, consistent snapshot, pre-restore backup, atomic swap with health check and rollback, never writes `config.yaml` (§12).
 - [ ] Server log and audit log in a separate log store, shown in the admin dashboard with filters, export and the
       error badge; audit via one hook, coalesced, IP-pseudonymized, append-only; retention settings; not in
       backups (§13).
