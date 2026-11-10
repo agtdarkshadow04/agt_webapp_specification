@@ -212,6 +212,7 @@ agt_<app_snake>/
 │   ├── db.ts                 # open DB, MIGRATIONS list, runMigrations
 │   ├── migrations/0001_initial.sql
 │   ├── migrations/logs/0001_initial.sql   # log store migrations (LOG-1)
+│   ├── migrations/control/0001_operation.sql # Postgres: control schema (BAK-12)
 │   ├── repository.ts         # all SQL lives here
 │   ├── http.ts               # HttpError, multipart helper
 │   ├── passwords.ts          # scrypt hashing, constant-time compare
@@ -481,8 +482,8 @@ agt_<app_snake>/
   restored databases.
 - **DATA-11 (PostgreSQL)** The PostgreSQL counterpart of DATA-5; until spec 5.1.0 it was also numbered DATA-5.
   Record versions in a `schema_migrations (version integer primary key, name text not
-  null, applied_at timestamptz not null default now())` table. Take `pg_advisory_lock(<app-specific constant>)`
-  while migrating so concurrent starts are safe. Use a single `pg.Pool`. Wrap multi-statement writes in a
+  null, applied_at timestamptz not null default now())` table. Run all startup migrations under the migration lock,
+  in the order BAK-12 gives (**Startup**), so concurrent starts are safe. Use a single `pg.Pool`. Wrap multi-statement writes in a
   `withTransaction(pool, async (client) => …)` helper that always releases the client. Use
   `timestamptz` for instants, `uuid` for IDs and `text` rather than `varchar(n)`.
 
@@ -930,12 +931,13 @@ agt_<app_snake>/
   - **Control connection.** Each process opens one dedicated `pg.Client` (not from the pool) at startup and keeps it
     open for the life of the process. The owner holds both locks on it, so they survive the pool being closed and
     recreated during a restore (BAK-4). A follower reconnects it if it drops.
-  - **Control schema.** At startup, before migrations, each process runs these idempotent statements (they are not
-    numbered migrations, because a restore replaces the app's schema but never this one):
+  - **Control schema.** The `control` schema has its own numbered migrations in
+    `server/migrations/control/NNNN_*.sql`, listed in `CONTROL_MIGRATIONS` and recorded in
+    `control.schema_migrations` (same columns as DATA-11's `schema_migrations`). They are separate from the app's
+    migrations because a restore replaces the app's schema but never this one. `0001_operation.sql` is:
 
     ```sql
-    CREATE SCHEMA IF NOT EXISTS control;
-    CREATE TABLE IF NOT EXISTS control.operation (
+    CREATE TABLE control.operation (
       id integer PRIMARY KEY CHECK (id = 1),
       state text NOT NULL CHECK (state IN ('idle', 'backup', 'restore', 'restore_failed')),
       generation bigint NOT NULL,
@@ -946,10 +948,24 @@ agt_<app_snake>/
       admin_username text,         --   their username,
       admin_session_expires_at timestamptz  --   and that session's expiry (AUTH-8)
     );
-    INSERT INTO control.operation (id, state, generation) VALUES (1, 'idle', 0) ON CONFLICT (id) DO NOTHING;
+    INSERT INTO control.operation (id, state, generation) VALUES (1, 'idle', 0);
     ```
 
-    `pg_dump` excludes the `control` schema (BAK-2), and restore never touches it (BAK-4).
+    A later spec or app version changes the control schema only by adding a migration, never by editing a released
+    one. `pg_dump` excludes the `control` schema (BAK-2), and restore never touches it (BAK-4).
+  - **Startup.** Each process runs these steps on its control connection before it listens or runs jobs:
+    1. Take the **migration lock** `pg_advisory_lock(0, hashtext('agt_<app_snake>_migrations'))` (session level;
+       it waits for another starting process). Everything up to step 6 runs under it, so processes that start
+       together set up and migrate one at a time.
+    2. `CREATE SCHEMA IF NOT EXISTS control` and `CREATE TABLE IF NOT EXISTS control.schema_migrations (…)`, then
+       run the pending `CONTROL_MIGRATIONS`, each in its own transaction. A control schema newer than the app knows
+       stops the server (SRV-8).
+    3. Refuse to start if the BAK-11 marker file exists or `control.operation.state` is `restore_failed`.
+    4. Run the pending `LOG_MIGRATIONS` (LOG-1).
+    5. Run the pending app migrations (DATA-4, DATA-11) while holding the shared write lock with `state` `idle`
+       (as for any data write, below), so they never run during a backup or restore; if the state is not `idle`,
+       release the write lock, wait a second and try again.
+    6. Release the migration lock, read `control.operation` and set the local state (**Following**).
   - **Every data write** (BAK-8: requests and background jobs) runs on one client from the pool, in this order:
     1. `SET lock_timeout = '30s'`, then `SELECT pg_advisory_lock_shared(0, hashtext('agt_<app_snake>_writes'))`. On
        a lock timeout (SQLSTATE `55P03`) return `503 maintenance` with `Retry-After: 10` (a job retries later).
@@ -984,7 +1000,7 @@ agt_<app_snake>/
   - **Following.** Every process reads `control.operation` at least once a second on its control connection (it
     MAY also `LISTEN` for a `NOTIFY` from the owner) and sets its local state to match, which decides the
     `503 maintenance` answers of BAK-8 and the health status (SRV-11). A process MUST read it and set its local
-    state **before** it starts listening or running jobs. After a restore, each process closes and recreates its
+    state **before** it starts listening or running jobs (**Startup**, step 6). After a restore, each process closes and recreates its
     `pg.Pool` before it serves `/api/` requests again, so no connection keeps state from the replaced schema. A read
     that runs in another process before it has seen `restore` may fail or see the data from before the restore,
     never half-restored data: `pg_restore --single-transaction` commits all at once.
@@ -1811,7 +1827,10 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
     - a backup or restore on one gets `409 conflict` while the other runs one;
     - during a restore on one, the other returns `503 maintenance` and health `maintenance`, and afterwards serves
       the restored data with a new pool and no sessions;
-    - a process started while a backup or restore runs serves no writes until it finishes;
+    - a process started while a backup or restore runs serves no writes until it finishes, and runs no app
+      migration until it finishes;
+    - two processes started at the same moment on an empty database both start, and `CONTROL_MIGRATIONS`,
+      `LOG_MIGRATIONS` and the app migrations each ran once; a control schema newer than the app stops startup;
     - closing the owner's control connection mid-backup or mid-restore stops the owner's own work (no file written
       after the close, the child process killed), returns the other process to `idle` (backup) or puts it in
       `restore_failed` with the marker file written (restore), and no write runs in between;
