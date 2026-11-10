@@ -7,6 +7,25 @@ major for a new or stricter MUST, minor for a new SHOULD/MAY or section, patch f
 Versions before 4.0.0 were developed in the reference implementation's repository
 (`agtdarkshadow04/agt_event_calendar`, `docs/agt-webapp-spec.md`); the PR numbers below refer to that repository.
 
+## [5.0.0] - Unreleased
+
+### Upgrade notes
+
+- Pass `maxmem` to every scrypt call (AUTH-2): `64 * 1024 * 1024` when hashing, and at least
+  `128 · r · (N + p + 2)` bytes (twice that recommended) computed from the stored hash's parameters when
+  verifying. Without it, Node rejects the AUTH-2 parameters and first-run setup and login fail.
+- Add a test that hashes and verifies a password with the production options (TEST-4).
+
+### Fixed
+
+- AUTH-2 could not be followed as written: `N = 2^15, r = 8, p = 1` need slightly more than Node's default
+  32 MiB `maxmem`, so scrypt threw `ERR_CRYPTO_INVALID_SCRYPT_PARAMS`. AUTH-2 now requires `maxmem` for hashing
+  and verification (#2).
+
+### Added
+
+- TEST-4: password hashing and verification with the production scrypt options.
+
 ## [4.0.0] - 2026-11-10
 
 ### Upgrade notes

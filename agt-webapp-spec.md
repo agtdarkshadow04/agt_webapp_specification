@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Spec version** | 4.0.0 |
+| **Spec version** | 5.0.0 |
 | **Status** | Normative |
 | **Audience** | AI coding agents that design, build, review or maintain AGT web applications |
 | **Source** | [`agtdarkshadow04/agt_webapp_specification`](https://github.com/agtdarkshadow04/agt_webapp_specification), released as tags `vX.Y.Z` (SPEC-1) |
@@ -482,7 +482,12 @@ agt_<app_snake>/
   users, roles or self-registration. Public visitors are anonymous.
 - **AUTH-2** Passwords are hashed with Node's built-in scrypt: `N = 2^15, r = 8, p = 1`, 16-byte random salt,
   64-byte key, input normalized with NFKC, stored as `scrypt$N$r$p$<salt b64>$<hash b64>`. Plaintext passwords
-  are never stored or logged.
+  are never stored or logged. scrypt needs about `128 · r · (N + p + 2)` bytes, which for these parameters is
+  just over Node's default `maxmem` of 32 MiB, so a call without `maxmem` fails with
+  `ERR_CRYPTO_INVALID_SCRYPT_PARAMS`. Every scrypt call MUST therefore pass `maxmem`:
+  - hashing: `{ N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }`;
+  - verifying: use the `N`, `r` and `p` from the stored hash, with `maxmem` of at least `128 · r · (N + p + 2)`
+    bytes computed from them. Use twice that for headroom (e.g. `2 * 128 * r * (N + p + 2)`).
 - **AUTH-3** Admin passwords MUST be 12–1024 characters. Compare secrets (setup password, usernames) with a
   constant-time function. On login, verify against a dummy hash when no admin exists, so timing does not
   reveal whether setup has run. Return the same `401 invalid_credentials` for a wrong username or password.
@@ -1277,6 +1282,8 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
 - **TEST-4** Required test coverage, at minimum:
   - first-run setup: unset password (503), wrong password (401), reuse of setup password (400), missing CSRF
     header (403), success (201 + session), disabled after setup (410) even while the variable is set;
+  - password hashing: hash a password and verify it with the exact production options (AUTH-2), and a wrong
+    password fails verification;
   - login, logout, session expiry, password change ends other sessions;
   - every admin route rejects requests without a session (401) and mutations without CSRF (403);
   - config: unknown key and invalid value rejected; precedence; `409 defined_in_config`;
