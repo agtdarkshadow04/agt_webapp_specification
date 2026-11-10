@@ -22,6 +22,7 @@ python3 scripts/check_spec.py   # links, requirement IDs, header version vs CHAN
 | `agt-webapp-spec.md` | The spec. Sections `## N.`, rules `**PREFIX-N**` |
 | `CHANGELOG.md` | One section per spec version (Keep a Changelog); newest first |
 | `README.md` | How apps use the spec and how to change it |
+| `assets/` | AGT logo and fonts apps bundle (UI-15); `README.md` lists SHA-256, sources and licences; `licenses/` holds licence texts |
 | `scripts/check_spec.py` | Consistency checks; no dependencies |
 
 ## Conventions and gotchas

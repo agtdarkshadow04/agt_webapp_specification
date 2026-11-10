@@ -2,11 +2,13 @@
 
 | | |
 | --- | --- |
-| **Spec version** | 5.1.0 |
+| **Spec version** | 5.2.0 |
 | **Status** | Normative |
 | **Audience** | AI coding agents that design, build, review or maintain AGT web applications |
 | **Source** | [`agtdarkshadow04/agt_webapp_specification`](https://github.com/agtdarkshadow04/agt_webapp_specification), released as tags `vX.Y.Z` (SPEC-1) |
 | **Reference implementation** | [`agtdarkshadow04/agt_event_calendar`](https://github.com/agtdarkshadow04/agt_event_calendar) (AGT Event Calendar); its deviations are listed in its `AGENTS.md` |
+| **Reference version** | AGT Event Calendar 2.2.0, commit [`ba223a786c7eb58e3f42f83e4b51ab5e84fb8160`](https://github.com/agtdarkshadow04/agt_event_calendar/tree/ba223a786c7eb58e3f42f83e4b51ab5e84fb8160) (not yet tagged; becomes the tag `v2.2.0` once it exists) |
+| **Assets** | [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/main/assets/README.md) in the source repository: the AGT logo and fonts, with SHA-256, sources and licences (UI-15) |
 | **Owner** | Alliance of Galactic Travellers; maintained by [`agtdarkshadow04`](https://github.com/agtdarkshadow04) |
 | **Release date and approval** | The date of this version's section in `CHANGELOG.md`. A version is approved when the owner merges its release PR and creates the annotated tag `vX.Y.Z` (SPEC-1); the tag's GitHub Release is the record |
 | **Security contact** | Report vulnerabilities in the spec or in an AGT app privately through the repository's **Security** tab → **Report a vulnerability** (GitHub private vulnerability reporting), never in a public issue |
@@ -34,7 +36,8 @@ change an existing one.
 - **Precedence.** This spec is the baseline. An app's `AGENTS.md` MAY tighten a rule but MUST NOT loosen one
   unless it lists the rule under **Deviations from the AGT web app spec**, giving the rule ID and the reason.
   A deviation that is not documented is a bug.
-- **When the spec is silent,** do what the reference implementation does, except where its `AGENTS.md` lists a
+- **When the spec is silent,** do what the reference implementation does at the **Reference version** in the
+  header (not its latest commit, which may already follow a newer spec), except where its `AGENTS.md` lists a
   deviation for that topic: then follow the spec, not the reference. The calendar's app-specific features
   (Migrate from Amplify, legacy 4-hex event IDs, bookmarks, national holidays and the change-log content type,
   the anthem audio, the portal glyph tool link) are examples, not templates.
@@ -991,8 +994,10 @@ All AGT apps MUST look like one family.
   `Twemoji Country Flags` (`/fonts/TwemojiCountryFlags.woff2`, `unicode-range: U+1F1E6-1F1FF`, keep its
   CC BY 4.0 licence file) wherever flags are shown; `NMS Glyphs Mono` for portal codes (UI-14). The fallback
   stack must render Thai, Chinese, Hindi and Japanese (system fonts), because NMS Futura does not cover them.
+  Apps that show text in the in-game Expedition alphabet MAY bundle `NMS Alphabet` (`/nms-alphabet.ttf`) the same
+  way; like the glyph font, it is never used for readable text.
 - **UI-14** Portal codes MUST be displayed as No Man's Sky portal glyphs using the bundled **NMS Glyphs Mono**
-  typeface, copied from the reference implementation (`public/NMS-Glyphs-Mono-fixed2026.ttf`; internal
+  typeface, copied from the spec repository's `assets/fonts/` (UI-15) to `public/NMS-Glyphs-Mono-fixed2026.ttf` (internal
   family name `NMS Glyphs`, style `Glyphs-Mono`). The font maps only the characters `0–9` and uppercase
   `A–F`, one glyph per hexadecimal digit. Rules:
   - Declare it once and use it only through the `.portal-glyphs` class, never as a general text font:
@@ -1027,8 +1032,15 @@ All AGT apps MUST look like one family.
 - **UI-4** Headings and button labels are uppercase with wide letter spacing (`0.12em`) and heavy weight;
   body text is sentence case. Headings use `#fff`; body text uses `--text`; secondary text uses `--muted`.
 - **UI-5** Use the official logo `public/AgtOfficialLogo.webp` as the favicon and in the header brand lockup
-  (decorative: `alt=""` and `aria-hidden="true"` next to visible brand text). Copy brand assets from the
-  reference implementation; never hotlink them.
+  (decorative: `alt=""` and `aria-hidden="true"` next to visible brand text). Copy brand assets from the spec
+  repository's `assets/` (UI-15); never hotlink them.
+- **UI-15** **Asset sources and licences.** The logo and fonts named in UI-3, UI-5 and UI-14 come from
+  [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/main/assets/README.md) in the spec's source repository, at the tag of the spec version the app follows.
+  Copy them unmodified, under the same file names, and check each file against the SHA-256 in `assets/README.md`. Apps
+  SHOULD ship the licence files listed there next to their fonts (`public/fonts/`), and SHOULD credit every bundled
+  font in the README (name, author, licence, source link). The licences themselves apply whatever this spec says:
+  the AGT logo is © Alliance of Galactic Travellers with all rights reserved and is used only in AGT apps, and
+  NMS Glyphs Mono is CC BY-NC-SA 4.0, so an app that shows portal glyphs is non-commercial.
 
 ### 15.3 Page chrome
 

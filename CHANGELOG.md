@@ -7,6 +7,26 @@ major for a new or stricter MUST, minor for a new SHOULD/MAY or section, patch f
 Versions before 4.0.0 were developed in the reference implementation's repository
 (`agtdarkshadow04/agt_event_calendar`, `docs/agt-webapp-spec.md`); the PR numbers below refer to that repository.
 
+## [5.2.0] - Unreleased
+
+### Added
+
+- `assets/`: the AGT logo and the fonts apps bundle (NMS Futura, NMS Glyphs Mono, Twemoji Country Flags and the
+  optional NMS Alphabet), with SHA-256, source, copyright and licence for each in `assets/README.md`, and the licence
+  texts in `assets/licenses/` (#7). `scripts/check_spec.py` checks the hashes.
+- UI-15: apps copy these assets unmodified from the spec repository at their spec tag, SHOULD ship the licence files
+  and credit the fonts in their README; the licences' own terms (the logo is all rights reserved, NMS Glyphs Mono is
+  non-commercial) apply (#7).
+- Header rows **Reference version** (AGT Event Calendar 2.2.0, pinned to a commit until it is tagged) and **Assets**
+  (#7).
+- UI-3: the optional `NMS Alphabet` font for text in the Expedition alphabet.
+
+### Changed
+
+- §0: "when the spec is silent" refers to the reference implementation at the pinned **Reference version**, not its
+  latest commit (#7).
+- UI-5, UI-14: brand assets are copied from the spec repository's `assets/`, not from the reference implementation.
+
 ## [5.1.0] - 2026-11-10
 
 ### Added
