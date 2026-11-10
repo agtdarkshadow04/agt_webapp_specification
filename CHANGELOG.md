@@ -51,8 +51,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - **AI disclosure (DOC-1, #10):** change the README's disclosure line to exactly
   `> **AI Disclosure:** This software was created using generative AI.` Remove "Its functionality has been verified
   by human review." and any other claim of review or verification.
-- **Stack (STACK-1, #12):** move to Node.js 26 (`engines` `>=26.0.0`, `node:26-bookworm-slim` in both Dockerfile stages,
-  NodeSource `setup_26.x`, `esbuild --target=node26`), TypeScript `~7.0`, Vite `^8.3` with `@vitejs/plugin-react`
+- **Stack (STACK-1, #12, #39):** move to Node.js 26 (`engines` `{ "node": ">=26.0.0 <27", "npm": ">=11.20.0 <12" }`,
+  `node:26-bookworm-slim` in both Dockerfile stages, NodeSource `setup_26.x`, `esbuild --target=node26`), TypeScript `~7.0`, Vite `^8.3` with `@vitejs/plugin-react`
   `^6.3`, and esbuild `^0.28` (Vite 8 needs esbuild 0.27 or newer, and `npm install` fails on the peer
   conflict otherwise). Run `npm run check` afterwards; the reference implementation needed no source changes.
 - **Install scripts (STACK-7, #12):** record `allowScripts` in `package.json` (`npm install-scripts approve
@@ -93,6 +93,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- STACK-1: `engines` pins both release lines with an upper bound, `"node": ">=26.0.0 <27"` and `"npm": ">=11.20.0 <12"`,
+  instead of the open-ended `>=26.0.0` (#39).
 - AUTH-2: verification accepts only the supported scrypt parameter profile and uses a fixed `maxmem`, instead of
   trusting `N`, `r` and `p` from the stored hash (#38). BAK-3: the preview checks the admin hash.
 - BAK-3: `action=restore` re-validates its upload; there is no state between preview and restore (#5).
