@@ -16,16 +16,27 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   a newer `formatVersion` (`422 archive_rejected`). Keep restoring every older `formatVersion`.
 - **Restore (BAK-3):** `action=restore` re-runs the whole preview validation on its own upload; remove any preview
   token or cached preview state.
-- **Operation lock (BAK-8):** add one in-process lock with the states `idle`, `backup`, `restore`. A second backup or
-  restore gets `409 conflict`. During a backup, data writes wait up to 30 s, then get `503 maintenance` with
+- **Operation lock (BAK-8):** add a lock in every process with the states `idle`, `backup`, `restore`. A second backup or
+  restore gets `409 conflict`. Entering a state first drains the writes (backup) or requests and jobs (restore)
+  already in progress, for up to 30 s, else `409 conflict` with nothing changed. During a backup, data writes wait up to 30 s, then get `503 maintenance` with
   `Retry-After: 10`. During a restore, every `/api/` route except `GET /api/health` returns `503 maintenance`, health
   returns `{ "status": "maintenance" }`, and background jobs pause. Add `maintenance` to the error codes (API-6) and
   show it in the UI as a notice that retries once (FE-5).
-- **Snapshot (BAK-9):** take the database snapshot and copy the uploads inside the `backup` lock.
+- **Snapshot (BAK-9):** take the database snapshot and copy the uploads inside the `backup` lock, after the drain.
+- **Shared lock (BAK-12, DATA-2, #37):** Postgres apps, even with one process, add the control connection, the
+  `control` schema (`control.operation`, `control.process`), the heartbeat registry, the advisory lock, following and
+  acknowledging the shared state, pool recreation after a restore, and owner-failure recovery. Exclude the `control`
+  schema from `pg_dump` and from the restore's table of contents. All processes share one data directory. SQLite
+  apps run exactly one process. Add the two-process tests (TEST-4).
 - **Restore steps (BAK-4, BAK-10, BAK-11):** drain in-flight requests (30 s, else `409 conflict`), close and reopen the
   database or `pg.Pool`, run the post-restore health check, roll back on failure (Postgres: from the pre-restore
   backup), and on a failed rollback stay in maintenance with `<dataDir>/restore-failed.json` and refuse to start while
   that file exists. Sessions are ended only by a successful restore.
+- **Finishing a restore (BAK-4 step 6, BAK-10, #44):** drop locked settings and clear `sessions` in one transaction
+  and roll back if it fails; name set-aside paths `<name>.restore-old-<timestamp>`; a failure deleting them is only a
+  warning in the report and the server log, never deleted automatically later; release the lock in a `finally`;
+  report success only after the transaction commits. Add the step 6 failure tests (TEST-4) and the Troubleshooting
+  entry.
 - **Tests and docs:** add the TEST-4 backup format, concurrency and failure tests, and the README Troubleshooting
   entries for "maintenance in progress" and recovering from a failed restore.
 - **Error bodies (API-6, #9):** add `code` (and `params` where the table lists them) to every `FieldError`, including
@@ -58,8 +69,10 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 - §12.1 *Archive format*: the full `manifest.json` schema with an example, path rules, and BAK-7 on format versions
   (#5).
-- §12.2 *Consistency and concurrency*: BAK-8, the operation lock with `503 maintenance` and `409 conflict`, and BAK-9,
-  consistent snapshots (#5).
+- §12.2 *Consistency and concurrency*: BAK-8, the operation lock with draining, `503 maintenance` and `409 conflict`,
+  and BAK-9, consistent snapshots (#5, #37).
+- BAK-12: the shared operation lock for Postgres apps, so several processes or replicas can share one database and
+  data directory (#37).
 - BAK-10 (rollback) and BAK-11 (failed rollback: maintenance, marker file, refusal to start) (#5).
 - API-6: the error body's `params`, and `code` and `params` on every `FieldError`, with a standard table of field
   codes (#9).
@@ -77,7 +90,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 - BAK-3: `action=restore` re-validates its upload; there is no state between preview and restore (#5).
 - BAK-4: restore is an ordered procedure with draining, a database or pool reopen, and a post-restore health check
-  (#5).
+  (#5). Step 6 is split into commit, clean-up, lock release and response, with defined failure handling, and BAK-10
+  also rolls back a failed step 6.1 (#44).
 - UI-1, UI-6, UI-9, UI-11, UI-15: the tokens, background and components come from the base stylesheet instead of
   "the reference CSS"; UI-1's block is a reference copy of its `:root` rule (#7).
 - STACK-1: Node.js 26 LTS (was 24), TypeScript `~7.0` (was `~5.8`), Vite 8 with `@vitejs/plugin-react` 6 (was Vite 6),
@@ -88,6 +102,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - DOC-1: the AI disclosure line no longer claims human review, which the spec never required; it is now
   "This software was created using generative AI." (#10). The spec repository's README says the same of the spec.
 - I18N-5, FE-5, FE-6: error text is translated by code, and the shared validators return field codes (#9).
+- DATA-2: a SQLite app runs one process; a Postgres app implements BAK-12 and its processes share one data directory
+  (#37).
 - SRV-11: `GET /api/health` reports `maintenance` during a restore. FE-5: how clients show `503 maintenance`.
 - DOC-1: Troubleshooting covers maintenance and failed restores.
 
