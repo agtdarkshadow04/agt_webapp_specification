@@ -23,6 +23,17 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   use supported versions within the STACK-1 lines (#12).
 - STACK-6: a dependency review (lockfile changes and `npm audit`) in every release PR, and a support review at each
   Node.js LTS change and at least every six months (SHOULD) (#12).
+- §19.1 *Acceptance tests*, all SHOULD, run before every release with the results in the release PR (#11):
+  - TEST-6: a Playwright browser suite (`npm run test:e2e`) for both entries: setup and sign-in, dialogs and focus,
+    accessible names with an automated WCAG 2.2 AA check, no horizontal scroll at each breakpoint and at 300 px,
+    and live regions;
+  - TEST-7: a manual accessibility checklist (keyboard, screen reader, contrast, zoom and font scale, reduced
+    motion, every locale);
+  - TEST-8: Docker Compose and local installation smoke tests, and a server test for `Secure` cookies behind a
+    proxy;
+  - TEST-9: an upgrade from the previous release and a rollback, following the README.
+- STACK-1: `@playwright/test` (and optionally `@axe-core/playwright`) as development dependencies; TEST-1: the
+  `test:e2e` script, outside `npm run check`.
 - UI-3: the community `NMS Alphabet` font is not an AGT asset, because its FontStruct licence prohibits hosting
   it as a web font.
 
@@ -30,7 +41,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 - §0: "when the spec is silent" refers to the reference implementation at the pinned **Reference version**, not its
   latest commit (#7).
-- VER-12: the release PR description SHOULD carry the dependency review (STACK-6).
+- VER-12: the release PR description SHOULD carry the dependency review (STACK-6) and the acceptance test results
+  (TEST-6 to TEST-9).
 - UI-5, UI-14: brand assets are copied from the spec repository's `assets/`, not from the reference implementation.
 
 ## [5.1.0] - 2026-11-10
