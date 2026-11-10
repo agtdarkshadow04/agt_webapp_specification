@@ -505,16 +505,21 @@ agt_<app_snake>/
 
 ### 8.1 Sources
 
-- **CFG-1** Configuration comes from exactly three places:
+- **CFG-1** Configuration comes from exactly three sources:
 
   | Source | Contains | Location |
   | --- | --- | --- |
-  | `config.yaml` | Everything that is not secret | Docker: `./config.yaml` mounted read-only at `/app/config.yaml`. Local: `/etc/agt-<app>/config.yaml` |
-  | `.env` | Secrets and first-run bootstrap values only | Docker: `env_file: .env`. Local: `/etc/agt-<app>/.env` via systemd `EnvironmentFile=` |
+  | `config.yaml` | Every non-secret setting an operator chooses | Docker: `./config.yaml` mounted read-only at `/app/config.yaml`. Local: `/etc/agt-<app>/config.yaml` |
+  | Process environment | Only the variables listed in CFG-2: operator secrets and first-run bootstrap values from `.env`, plus a few operational variables that the Dockerfile, systemd unit, Compose file or development and CI tooling set | `.env`: Docker `env_file: .env`, local `/etc/agt-<app>/.env` via systemd `EnvironmentFile=`. Others: where CFG-2's **Set by** column says |
   | Dashboard settings | Keys listed in `EDITABLE_SETTINGS`, stored in the `settings` table | Database |
 
+  An operator writes only `config.yaml`, `.env` and dashboard settings. The launcher-set variables are part of the
+  shipped Dockerfile, unit and Compose file; an operator changes them only by editing those files, and every one of
+  them is overridden by its `config.yaml` key where CFG-2 names one.
+
 - **CFG-2** Environment variables are this set plus app-specific secrets (see below). Everything else that is not
-  secret goes in `config.yaml` (CFG-1), never in an environment variable.
+  secret goes in `config.yaml` (CFG-1), never in an environment variable. The **Set by** column separates the
+  operator's `.env` from the variables the launcher or tooling sets.
 
   | Variable | Set by | Purpose |
   | --- | --- | --- |
