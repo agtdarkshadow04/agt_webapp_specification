@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Checks agt-webapp-spec.md: internal links resolve, requirement IDs are unique and every cited ID is defined,
-and the version in the header matches the newest CHANGELOG.md release. Exits 1 on any problem.
+the version in the header matches the newest CHANGELOG.md release, and every file in assets/ matches the SHA-256
+listed in assets/README.md (and every listed file exists). Exits 1 on any problem.
 
 Usage: python3 scripts/check_spec.py
 """
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -44,7 +46,22 @@ if not version:
 elif not newest or newest.group(1) != version.group(1):
     problems.append(f'spec version {version.group(1)} is not the newest CHANGELOG.md heading')
 
+# assets/README.md lists each asset as | `path` | purpose | `sha256` |, paths relative to assets/.
+assets_dir = ROOT / 'assets'
+listed = dict(re.findall(r'^\| `([^`]+)` \| [^|]+ \| `([0-9a-f]{64})` \|$',
+                         (assets_dir / 'README.md').read_text(encoding='utf-8'), re.M))
+for path, digest in sorted(listed.items()):
+    file = assets_dir / path
+    if not file.is_file():
+        problems.append(f'assets/README.md lists a missing file: assets/{path}')
+    elif hashlib.sha256(file.read_bytes()).hexdigest() != digest:
+        problems.append(f'SHA-256 of assets/{path} does not match assets/README.md')
+for file in sorted(assets_dir.rglob('*')):
+    rel = file.relative_to(assets_dir).as_posix()
+    if file.is_file() and rel != 'README.md' and not rel.startswith('licenses/') and rel not in listed:
+        problems.append(f'assets/{rel} is not listed in assets/README.md')
+
 for problem in problems:
     print(problem)
-print(f'{len(defined)} requirement IDs, {len(anchors)} headings: ' + ('FAILED' if problems else 'OK'))
+print(f'{len(defined)} requirement IDs, {len(anchors)} headings, {len(listed)} assets: ' + ('FAILED' if problems else 'OK'))
 sys.exit(1 if problems else 0)

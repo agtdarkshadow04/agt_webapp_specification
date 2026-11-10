@@ -25,7 +25,9 @@ Each app keeps a pinned copy of the spec version it follows (SPEC-2):
 
 3. In the app's `AGENTS.md`, link to the copy and name the version and tag, for example "follows the AGT Web
    Application Specification v4.0.0 (`agt_webapp_specification@v4.0.0`)" (DOC-2).
-4. List every rule the app doesn't meet in the deviations table of its `AGENTS.md`, never by editing the copy.
+4. Copy the logo and fonts from `assets/` at the same tag into `public/`, unmodified, with the licence files
+   (UI-15). [`assets/README.md`](assets/README.md) lists each file's SHA-256, source and licence.
+5. List every rule the app doesn't meet in the deviations table of its `AGENTS.md`, never by editing the copy.
 
 To move an app to a newer spec version, follow SPEC-3: one PR that replaces the copy, updates `AGENTS.md`, and
 implements the new rules or lists them as deviations "to fix". `CHANGELOG.md` lists what changed in each version,
