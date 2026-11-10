@@ -7,7 +7,7 @@ major for a new or stricter MUST, minor for a new SHOULD/MAY or section, patch f
 Versions before 4.0.0 were developed in the reference implementation's repository
 (`agtdarkshadow04/agt_event_calendar`, `docs/agt-webapp-spec.md`); the PR numbers below refer to that repository.
 
-## [5.2.0] - Unreleased
+## [5.2.0] - 2026-11-10
 
 ### Added
 
