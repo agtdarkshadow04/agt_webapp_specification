@@ -299,8 +299,16 @@ agt_<app_snake>/
   - `operationId`: unique camelCase verb + noun (`listEvents`, `createAdminEvent`, `updateSettings`),
   - `tags`: `public`, `auth`, `admin`, or a resource name,
   - `summary`: one English sentence,
-  - `security`: `[]` for public routes; `[{ sessionCookie: [], csrfHeader: [] }]` for state-changing admin
-    routes and `[{ sessionCookie: [] }]` for admin reads.
+  - `security`: what the route really requires (AUTH-9, SEC-5), from this table:
+
+    | Route | Needs | `security` |
+    | --- | --- | --- |
+    | Public reads and anonymous writes (e.g. `GET /api/events`, `GET /api/setup/status`, `POST /api/submissions`) | Nothing | `[]` |
+    | `POST /api/setup`, `POST /api/admin/login` | CSRF header, no session | `[{ csrfHeader: [] }]` |
+    | Other admin reads (`GET`) | Session | `[{ sessionCookie: [] }]` |
+    | Other admin writes (including `POST /api/admin/logout`) | Session and CSRF header | `[{ sessionCookie: [], csrfHeader: [] }]` |
+
+    Define these four values once (e.g. a `SECURITY` object in `server/openapi.ts`) and use them in every route.
 
   Declare the security schemes once:
 
@@ -321,7 +329,9 @@ agt_<app_snake>/
 - **API-13** A server test MUST build the app, fetch `/api/openapi.json`, and assert that:
   every `/api/` route registered on the app (except `hide: true` ones) appears in the document; every
   operation has a unique `operationId`, `tags`, a `2xx` response with a schema and a `default` error
-  response; and the document's `openapi` field is `3.1.0`.
+  response; and the document's `openapi` field is `3.1.0`. The test SHOULD also assert that each operation's
+  `security` is the API-11 value for its route (by path and method, as in the table), so a route documented as
+  public or session-only cannot silently need more or less.
 - **API-14** An interactive API UI (e.g. Swagger UI) is optional. If shipped, it MUST be bundled (no CDN),
   served only to a signed-in admin, and work under the unchanged CSP ([SEC-1](#101-response-headers)).
 

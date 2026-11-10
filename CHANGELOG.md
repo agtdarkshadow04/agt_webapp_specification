@@ -13,6 +13,7 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 - TEST-4: Postgres apps test that backups contain no `logs` objects and that a restore leaves the log store
   unchanged.
+- API-13: the OpenAPI test SHOULD assert each operation's `security` value.
 
 ### Fixed
 
@@ -22,6 +23,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   (`--use-list`) that leaves out the `logs` schema, so backups made before this fix still restore without
   touching the logs; BAK-3 warns about them. Apps that follow LOG-17 already must make these changes: dump with
   `--exclude-schema=logs` and restore with the filtered list.
+- API-11 gave the wrong OpenAPI `security` for first-run setup and login (#8): setup fell under `[]`, hiding the
+  CSRF header it needs (SEC-5), and login fell under the admin-write value, claiming a session it cannot need
+  (AUTH-9). Both now use `[{ csrfHeader: [] }]`, and API-11 has a table of the four `security` values.
 
 ## [5.0.0] - 2026-11-10
 
