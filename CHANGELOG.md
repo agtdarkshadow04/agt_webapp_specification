@@ -100,6 +100,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- CFG-1: the second source is the process environment, not only `.env`: operator secrets from `.env` plus the
+  operational variables in CFG-2 that the Dockerfile, systemd unit, Compose file or tooling set. A clarification; no
+  change for apps (#43).
 - UI-15: shipping the licence files and crediting the fonts are MUST instead of SHOULD, because the licences require
   them; DOC-1 adds a Credits section; `assets/README.md` lists the licence files with SHA-256, and
   `scripts/check_spec.py` checks them too (#41).
