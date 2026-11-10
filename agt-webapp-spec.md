@@ -140,6 +140,7 @@ The `engines` ranges MUST be exactly the release lines above, with an upper boun
 to the next LTS line is a major spec change (STACK-5). npm only warns about an `engines` mismatch unless
 `engine-strict` is set; apps MAY add `engine-strict=true` to a committed `.npmrc` to make it an error. Apps do not
 set `packageManager`, which only Corepack reads.
+
 - **STACK-2** The client MUST NOT use a router library or a global state library (Redux, Zustand, …).
   Use React state, context and URL query parameters. An app with more than one public page MAY add a second
   Vite entry instead of a router.
