@@ -951,12 +951,11 @@ agt_<app_snake>/
   every request and job, however long a process is paused. A session's own locks never block it, so the owner's
   process drains its own requests with its local counters (BAK-8). Locks are always taken in the order operation,
   activity, write, and released in reverse, so no two holders can wait for each other. Advisory locks belong to one
-  database; Advisory locks belong to one database;
-  every check of `pg_locks` MUST include `database = (SELECT oid FROM pg_database WHERE datname =
+  database; every check of `pg_locks` MUST include `database = (SELECT oid FROM pg_database WHERE datname =
   current_database())`.
 
   - **Control connection.** Each process opens one dedicated `pg.Client` (not from the pool) at startup and keeps it
-    open for the life of the process. The owner holds both locks on it, so they survive the pool being closed and
+    open for the life of the process. The owner holds the locks it takes on it, so they survive the pool being closed and
     recreated during a restore (BAK-4). A follower reconnects it if it drops.
   - **Control schema.** The `control` schema has its own numbered migrations in
     `server/migrations/control/NNNN_*.sql`, listed in `CONTROL_MIGRATIONS` and recorded in
@@ -993,28 +992,55 @@ agt_<app_snake>/
        (as for any data write, below), so they never run during a backup or restore; if the state is not `idle`,
        release the write lock, wait a second and try again.
     6. Release the migration lock, read `control.operation` and set the local state (**Following**).
-  - **Activity lease.** Each process holds the activity lock **shared** on its control connection while at least one
-    `/api/` request (except `GET /api/health`) or job is in progress in it, counted with an in-flight counter:
-    1. When the counter goes from 0 to 1, the process runs `SET lock_timeout = '30s'` and
-       `SELECT pg_advisory_lock_shared(0, hashtext('agt_<app_snake>_activity'))`, then reads
-       `control.operation.state` and sets its local state from it, both inside the lock. While a restore owner is
-       waiting for or holding the lock exclusively, this waits behind it; on a timeout, or if the state is not
-       `idle` or `backup`, the request gets `503 maintenance` (a job retries later) and the counter goes back down.
-    2. While the counter is above 0, new requests and jobs join the lease without another database call; the
-       process still refuses them as soon as its local state is `restore` or `restore_failed` (**Following**).
-    3. When the counter returns to 0, the process runs `pg_advisory_unlock_shared(…)`.
+  - **Activity lease and admission.** Each process holds the activity lock **shared** on its control connection
+    while at least one `/api/` request (except `GET /api/health`) or job is in progress in it, counted with an
+    in-flight counter. **Every** new request and job is admitted through the process's control-connection queue
+    (calls on it are serialized), before its handler starts:
+    1. If the counter is 0, take the lease: `SET lock_timeout = '30s'`, then
+       `SELECT pg_advisory_lock_shared(0, hashtext('agt_<app_snake>_activity'))`. While a restore owner is waiting
+       for or holding the lock exclusively, this waits behind it; on a timeout the request gets `503 maintenance`
+       (a job retries later).
+    2. Read `SELECT state, admin_session_hash, admin_session_expires_at FROM control.operation WHERE id = 1`, even
+       when the lease is already held, and set the local state from it.
+    3. Admit by state:
 
-    Calls on the control connection are serialized in one queue. If the control connection fails, the lease is gone:
-    the process aborts every `/api/` request in progress (`503 maintenance`, through an `AbortSignal` that handlers
-    and file streams honour), pauses its jobs, and answers new ones with `503` until it has reconnected and taken a
-    new lease.
+       | State | Admitted |
+       | --- | --- |
+       | `idle`, `backup` | Every request and job |
+       | `restore` | Nothing new (the restore request itself was admitted before it started the restore) |
+       | `restore_failed` | Only `GET /api/admin/session` and `POST /api/admin/restore` from the recovery session (BAK-11): the SHA-256 of the request's session token equals `admin_session_hash` and `now()` is before `admin_session_expires_at`. The restored `sessions` table is never consulted. No job is admitted |
+
+       Anything not admitted gets `503 maintenance` and never reaches its handler.
+    4. An admitted request or job increments the counter and decrements it when it ends, including on error. When
+       the counter returns to 0, the process runs `pg_advisory_unlock_shared(…activity)`.
+
+    A request admitted from `idle` before an owner's state update commits is in progress, and the owner's exclusive
+    request drains it; a request that reads `restore` is refused even while other requests keep the lease open,
+    because PostgreSQL grants a session's repeated request for a lock it already holds.
+
+    **Lock holds on one connection.** A backup or restore request is itself admitted under its process's lease, so
+    the owner's control connection holds the activity lock shared (the lease) and then, for a restore, exclusive.
+    PostgreSQL counts the two separately: `pg_advisory_unlock(…activity)` releases the owner's exclusive hold once,
+    at **Finishing**, and the lease's shared hold is released once, by step 4. This is the same for a normal and a
+    recovery restore.
+
+    If the control connection fails, the lease is gone: the process aborts every `/api/` request in progress
+    (`503 maintenance`, through an `AbortSignal` that handlers and file streams honour), pauses its jobs, and
+    answers new ones with `503` until it has reconnected and taken a new lease.
   - **Every data write** (BAK-8: requests and background jobs, through `withDataWrite()`) runs inside the activity
     lease, on one client from the pool, in this order:
     1. `SET lock_timeout = '30s'`, then `SELECT pg_advisory_lock_shared(0, hashtext('agt_<app_snake>_writes'))`. On
        a lock timeout (SQLSTATE `55P03`) return `503 maintenance` with `Retry-After: 10` (a job retries later).
-    2. `BEGIN`, then `SELECT state FROM control.operation WHERE id = 1`. If it is not `idle`, roll back, unlock and
-       return `503 maintenance`. This check inside the lock is what keeps writes out after an owner fails or before
-       a process has seen the new state.
+    2. `BEGIN`, then `SELECT state FROM control.operation WHERE id = 1`, and act on it:
+       - `idle`: continue.
+       - `backup`: a backup has started but its owner does not hold the write lock yet. Roll back, unlock, wait one
+         second and go back to step 1, until the state is `idle` or 30 seconds have passed since the write started;
+         then return `503 maintenance` with `Retry-After: 10`. This keeps BAK-8's promise that a write during a
+         backup waits.
+       - `restore` or `restore_failed`: roll back, unlock and return `503 maintenance` at once.
+
+       This check inside the lock is what keeps writes out after an owner fails or before a process has seen the new
+       state.
     3. Write new upload files, change the database, `COMMIT`, then delete the files of removed uploads.
     4. In a `finally`: `SELECT pg_advisory_unlock_shared(…)`, `RESET lock_timeout`, and release the client
        (`client.release(err)` destroys it after an error).
@@ -1191,7 +1217,9 @@ agt_<app_snake>/
       `500 internal` ("The restore failed. The app stays in maintenance.").
     - On success, step 6 ends as for any restore: marker file deleted, recovery session and `pre_restore_backup`
       cleared, state `idle`, all sessions ended and the caller signed out.
-    Any other session, or the recovery session after its expiry, gets `503 maintenance` as before.
+    Any other session, or the recovery session after its expiry, gets `503 maintenance` as before. Postgres apps
+    admit the recovery session's requests through the activity lease by this same rule (BAK-12, **Activity lease and
+    admission**).
   - **Startup.** A process refuses to start (SRV-8) while the marker file exists **or** (Postgres)
     `control.operation.state` is `restore_failed`, with a message naming the pre-restore backup and the README
     section that explains how to restore it by hand. If only one of the two is present, it also refuses, and the
@@ -1956,6 +1984,14 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
       process keep working;
     - closing a follower's control connection aborts its requests in progress with `503` and it serves `/api/`
       again only after taking a new lease;
+    - admission: with one long request holding process B's lease, commit `restore` from process A and send B a
+      second request before B polls: its handler never starts and it gets `503`; the first request finishes or the
+      restore gives up with `409` after 30 seconds;
+    - recovery admission: enter `restore_failed` with no lease held anywhere, then with the recovery session call
+      `GET /api/admin/session`, preview and restore successfully, each through the activity lease; another session
+      gets `503` throughout; afterwards no advisory lock is held (`pg_locks`);
+    - backup start: a test hook pauses the owner between setting `backup` and taking the write lock; a write issued
+      in that gap waits and succeeds after the backup, which contains all of it or none;
     - during a restore on one, the other returns `503 maintenance` and health `maintenance`, and afterwards serves
       the restored data with a new pool and no sessions;
     - a process started while a backup or restore runs serves no writes until it finishes, and runs no app

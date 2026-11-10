@@ -43,6 +43,10 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - **Setup password and username (AUTH-3, AUTH-5, SRV-8, #45):** at startup, while no admin exists, refuse to start if
   `AGT_<APP>_SETUP_PASSWORD` is longer than 1024 characters. Reject a username that is empty after trimming or longer
   than 64 characters with `400 validation_failed`. Add the TEST-4 cases.
+- **Admission (BAK-11, BAK-12, #72, #73, #74):** admit every new request and job through the control connection with a
+  fresh read of `control.operation`, not only the first one in a lease; in `restore_failed` admit only the recovery
+  session's `GET /api/admin/session` and `POST /api/admin/restore`, checked against the stored hash and expiry. A data
+  write that reads `backup` releases its lock and retries for up to 30 seconds instead of failing at once.
 - **Rollback list and preview cleanup (BAK-3, BAK-4, BAK-10, #68, #69):** Postgres apps write a rollback list from
   the pre-restore backup's own dump (`pre-restore-backup-<timestamp>.list`, through the allowlist) and roll back with
   it; startup cleanup of the preview database takes the preview lock first and skips when a preview holds it.
@@ -141,6 +145,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- BAK-12: every request and job is admitted by a fresh state read (#73); the recovery session's requests are admitted
+  in `restore_failed` (#72); a write that sees `backup` waits instead of failing (#74); two wording fixes (#75).
 - BAK-10: the Postgres rollback uses a list made from the pre-restore backup's own dump instead of the incoming
   archive's list (#68). BAK-3: startup cleanup of the preview database takes the preview lock (#69).
 - BAK-12: a third advisory lock, the activity lock, makes a Postgres restore wait for every request and job in every
