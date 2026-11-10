@@ -8,7 +8,7 @@
 | **Source** | [`agtdarkshadow04/agt_webapp_specification`](https://github.com/agtdarkshadow04/agt_webapp_specification), released as tags `vX.Y.Z` (SPEC-1) |
 | **Reference implementation** | [`agtdarkshadow04/agt_event_calendar`](https://github.com/agtdarkshadow04/agt_event_calendar) (AGT Event Calendar); its deviations are listed in its `AGENTS.md` |
 | **Reference version** | AGT Event Calendar 2.2.0, commit [`ba223a786c7eb58e3f42f83e4b51ab5e84fb8160`](https://github.com/agtdarkshadow04/agt_event_calendar/tree/ba223a786c7eb58e3f42f83e4b51ab5e84fb8160) (not yet tagged; becomes the tag `v2.2.0` once it exists) |
-| **Assets** | [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/main/assets/README.md) in the source repository: the AGT logo and fonts, with SHA-256, sources and licences (UI-15) |
+| **Assets** | [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/v6.0.0/assets/README.md) in the source repository: the AGT logo and fonts, with SHA-256, sources and licences (UI-15) |
 | **Owner** | Alliance of Galactic Travellers; maintained by [`agtdarkshadow04`](https://github.com/agtdarkshadow04) |
 | **Release date and approval** | The date of this version's section in `CHANGELOG.md`. A version is approved when the owner merges its release PR and creates the annotated tag `vX.Y.Z` (SPEC-1); the tag's GitHub Release is the record |
 | **Security contact** | Report vulnerabilities in the spec or in an AGT app privately through the repository's **Security** tab → **Report a vulnerability** (GitHub private vulnerability reporting), never in a public issue |
@@ -136,7 +136,7 @@ Add a row (next free port) when you create an app.
 | Lint | `tsc -b` (no ESLint, no Prettier) |
 
 The `engines` ranges MUST be exactly the release lines above, with an upper bound: a range without one (such as
-`>=26.0.0`) also accepts Node.js 27, which is never LTS, and every later major this spec has not reviewed. Moving
+`>=26.0.0`) also accepts Node.js 27 and every later major, none of which this spec version has reviewed. Moving
 to the next LTS line is a major spec change (STACK-5). npm only warns about an `engines` mismatch unless
 `engine-strict` is set; apps MAY add `engine-strict=true` to a committed `.npmrc` to make it an error. Apps do not
 set `packageManager`, which only Corepack reads.
@@ -1437,7 +1437,7 @@ All AGT apps MUST look like one family.
   (decorative: `alt=""` and `aria-hidden="true"` next to visible brand text). Copy brand assets from the spec
   repository's `assets/` (UI-15); never hotlink them.
 - **UI-15** **Asset sources and licences.** The logo and fonts named in UI-3, UI-5 and UI-14, and the base stylesheet (UI-16), come from
-  [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/main/assets/README.md) in the spec's source repository, at the tag of the spec version the app follows.
+  [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/v6.0.0/assets/README.md) in the spec's source repository, at the tag of the spec version the app follows.
   Copy them unmodified, under the same file names, and check each file against the SHA-256 in `assets/README.md`.
   The fonts' licences make the next two points conditions of redistribution, so they are requirements:
   - **Licence files.** Apps MUST ship, unmodified, `public/fonts/NMSFuturaProBook-OFL.txt` (OFL 1.1 requires the
