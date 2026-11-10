@@ -32,6 +32,11 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   database or `pg.Pool`, run the post-restore health check, roll back on failure (Postgres: from the pre-restore
   backup), and on a failed rollback stay in maintenance with `<dataDir>/restore-failed.json` and refuse to start while
   that file exists. Sessions are ended only by a successful restore.
+- **Finishing a restore (BAK-4 step 6, BAK-10, #44):** drop locked settings and clear `sessions` in one transaction
+  and roll back if it fails; name set-aside paths `<name>.restore-old-<timestamp>`; a failure deleting them is only a
+  warning in the report and the server log, never deleted automatically later; release the lock in a `finally`;
+  report success only after the transaction commits. Add the step 6 failure tests (TEST-4) and the Troubleshooting
+  entry.
 - **Tests and docs:** add the TEST-4 backup format, concurrency and failure tests, and the README Troubleshooting
   entries for "maintenance in progress" and recovering from a failed restore.
 - **Error bodies (API-6, #9):** add `code` (and `params` where the table lists them) to every `FieldError`, including
@@ -85,7 +90,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 - BAK-3: `action=restore` re-validates its upload; there is no state between preview and restore (#5).
 - BAK-4: restore is an ordered procedure with draining, a database or pool reopen, and a post-restore health check
-  (#5).
+  (#5). Step 6 is split into commit, clean-up, lock release and response, with defined failure handling, and BAK-10
+  also rolls back a failed step 6.1 (#44).
 - UI-1, UI-6, UI-9, UI-11, UI-15: the tokens, background and components come from the base stylesheet instead of
   "the reference CSS"; UI-1's block is a reference copy of its `:root` rule (#7).
 - STACK-1: Node.js 26 LTS (was 24), TypeScript `~7.0` (was `~5.8`), Vite 8 with `@vitejs/plugin-react` 6 (was Vite 6),

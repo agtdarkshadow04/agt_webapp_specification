@@ -954,6 +954,9 @@ agt_<app_snake>/
   4. Replace the database and the uploads:
      - SQLite: prepare the new files beside the live ones, checkpoint and close `context.db`, rename the live files
        aside, rename the new ones into place, and reopen `context.db`.
+     - Set-aside paths are the live names plus `.restore-old-<timestamp>` (same timestamp format as BAK-2), for
+       example `agt-calendar.sqlite.restore-old-2026-11-10T06-30-59-123Z` and `uploads.restore-old-…`, so they never
+       collide with a path an earlier restore left behind.
      - Postgres: close the `pg.Pool` (`await pool.end()`), run `pg_restore --clean --if-exists --single-transaction
        --no-owner --use-list=<filtered TOC>` (see below), and create a new pool. Then rename the uploads directories
        as for SQLite.
@@ -961,9 +964,21 @@ agt_<app_snake>/
      and `PRAGMA foreign_key_check` returns no rows (Postgres: the restore committed, and `SELECT 1` works on the new
      pool); the schema version is the app's (DATA-4); every table in `EXPECTED_TABLES` exists; every upload the
      database references exists in `uploads/`.
-  6. On success: drop dashboard settings for keys now locked by `config.yaml` and list them in the report; end all
-     sessions (the restored admin account replaces the current one) and sign the caller out; delete the files set
-     aside in step 4; release the lock.
+  6. Finish, in this order:
+     1. **Commit** (part of the restore): in one database transaction on the restored data, delete the dashboard
+        settings whose keys `config.yaml` now locks (CFG-7) and every row of `sessions` (a backup has none, so this
+        only makes sure). If this transaction fails, the restore has failed: roll back (BAK-10).
+     2. **Clean up** (warnings only): delete the paths set aside in step 4. The restored data is live and checked by
+        now, so a failure here does not roll back: the restore still succeeds, its report lists each path left
+        behind as a warning, and a server log `warn` (source `backup`) names them. The operator deletes them by hand
+        (README Troubleshooting); an app MUST NOT delete them automatically later, because after a failed rollback
+        they may hold the only copy of the data.
+     3. **Release the lock** (BAK-8; Postgres apps: set `control.operation` to `idle` and release the advisory
+        lock, BAK-12) in a `finally`, so a failure in step 6.2 never leaves it held.
+     4. **Respond** `200` with the report (counts, the dropped locked settings, warnings) and clear the caller's
+        session cookie: the restored admin account replaces the current one, so the caller signs in again.
+
+     A restore reports success only after step 6.1 has committed. Nothing in step 6.2 or 6.3 changes that outcome.
 
   The log store is left untouched, and the restore itself is audited (LOG-17).
 
@@ -973,7 +988,7 @@ agt_<app_snake>/
   `TABLE DATA logs …` lines), and pass the rest with `--use-list`. `--exclude-schema=logs` alone is not enough
   for `pg_restore`: it skips the objects in the schema but still runs `DROP SCHEMA IF EXISTS logs`, which fails
   the restore.
-- **BAK-10** **Rollback.** If step 4 or 5 of BAK-4 fails, the app rolls back before releasing the lock: SQLite renames
+- **BAK-10** **Rollback.** If step 4, 5 or 6.1 of BAK-4 fails, the app rolls back before releasing the lock: SQLite renames
   the set-aside files back and reopens them; Postgres restores the pre-restore backup's dump with the same
   `pg_restore` command; both rename the uploads back. It then runs the step 5 health check again. If that passes,
   the restore request returns `500 internal` with the message "The restore failed and was rolled back. Nothing was
@@ -1703,8 +1718,9 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
     `maintenance`, and afterwards serves the restored data with a new pool and no sessions; closing the owner's
     control connection mid-backup returns the other to `idle`, and mid-restore puts it in `restore_failed` with the
     marker file written;
-  - failure (BAK-10, BAK-11): a failure injected after the swap rolls back and leaves the data and the sessions as
-    they were; a failure injected into the rollback leaves the app in maintenance with `restore-failed.json`
+  - failure (BAK-10, BAK-11): a failure injected after the swap, and one injected into the step 6.1 transaction,
+    each roll back and leave the data, the settings and the sessions as they were; a failure injected into deleting
+    the set-aside paths still returns `200`, lists the paths as warnings and releases the lock; a failure injected into the rollback leaves the app in maintenance with `restore-failed.json`
     written, and a restart then refuses to start;
   - Postgres apps: a backup's dump has no entries in the `logs` schema, and a restore, including one from a dump
     that does contain the `logs` schema, leaves the log rows and `log_meta` unchanged (BAK-2, BAK-4, LOG-17);
@@ -1808,8 +1824,9 @@ Backups under concurrent writes and failures during a restore are covered by ser
   9. **Content safety** (what is accepted and how it is rendered)
   10. **Development** (commands table, project layout table, link to `AGENTS.md` and this spec)
   11. **Troubleshooting** (refuses to start, setup password missing, locked out, rate limits, proxy/HTTPS,
-      "maintenance in progress", and recovering from a failed restore by hand with the pre-restore backup and the
-      `restore-failed.json` marker (BAK-11); pointing to the Server log tab first)
+      "maintenance in progress", recovering from a failed restore by hand with the pre-restore backup and the
+      `restore-failed.json` marker (BAK-11), and deleting `*.restore-old-*` paths a restore could not remove
+      (BAK-4); pointing to the Server log tab first)
 
 ### 20.2 AGENTS.md (for agents)
 
