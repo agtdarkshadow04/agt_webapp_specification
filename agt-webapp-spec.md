@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | **Spec version** | 6.0.0 |
-| **Status** | Normative |
+| **Status** | Normative. 6.0.0 is the first production-ready version; earlier versions were development releases, and apps that follow one should move to 6.0.0 (SPEC-3) |
 | **Audience** | AI coding agents that design, build, review or maintain AGT web applications |
 | **Source** | [`agtdarkshadow04/agt_webapp_specification`](https://github.com/agtdarkshadow04/agt_webapp_specification), released as tags `vX.Y.Z` (SPEC-1) |
 | **Reference implementation** | [`agtdarkshadow04/agt_event_calendar`](https://github.com/agtdarkshadow04/agt_event_calendar) (AGT Event Calendar); its deviations are listed in its `AGENTS.md` |

@@ -15,7 +15,8 @@ agents that build and maintain AGT apps.
 
 Each app keeps a pinned copy of the spec version it follows (SPEC-2):
 
-1. Pick a release tag (`vX.Y.Z`; the newest is the default for new apps).
+1. Pick a release tag (`vX.Y.Z`; the newest is the default for new apps). `v6.0.0` is the first production-ready
+   version; earlier tags are development releases.
 2. Copy `agt-webapp-spec.md` from that tag to `docs/agt-webapp-spec.md` in the app, unmodified:
 
    ```bash
