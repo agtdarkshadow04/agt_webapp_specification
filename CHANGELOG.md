@@ -7,7 +7,10 @@ major for a new or stricter MUST, minor for a new SHOULD/MAY or section, patch f
 Versions before 4.0.0 were developed in the reference implementation's repository
 (`agtdarkshadow04/agt_event_calendar`, `docs/agt-webapp-spec.md`); the PR numbers below refer to that repository.
 
-## [6.0.0] - Unreleased
+## [6.0.0] - 2026-11-10
+
+The first production-ready version of the specification, and so far the only one. Versions before 6.0.0 were
+development releases; apps that follow one should move to 6.0.0 (SPEC-3), using the upgrade notes below.
 
 ### Upgrade notes
 
