@@ -1453,8 +1453,9 @@ All AGT apps MUST look like one family.
   `message`s are English (API-6); the client translates them (I18N-6).
 - **I18N-6** **Translated errors.** The client MUST show every error in the user's language:
   - `src/translations.ts` (and `src/admin/i18n.ts` for admin-only codes) has one string for every standard `error`
-    code, every standard field `code` (API-6) and every app-specific code, in all locales, with `{param}` placeholders
-    filled from `params` by `formatTranslation()`. Field strings also get the translated field label as `{field}`.
+    code, every standard field `code` (API-6) and every app-specific code, in all locales, with `{{param}}` placeholders
+    (I18N-2) filled from `params` by `formatTranslation()`. Field strings also get the translated field label as
+    `{{field}}`. Example: `too_long` → `"{{field}} must be at most {{max}} characters."`.
   - `src/lib/errors.ts` exports `errorText(error, translations)` and `fieldErrorText(fieldError, label,
     translations)`; FE-5 uses only these. They fall back to the server's English `message` only for a code the
     client does not know (e.g. an older client talking to a newer server).
