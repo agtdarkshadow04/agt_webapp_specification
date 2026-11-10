@@ -43,6 +43,13 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - **Setup password and username (AUTH-3, AUTH-5, SRV-8, #45):** at startup, while no admin exists, refuse to start if
   `AGT_<APP>_SETUP_PASSWORD` is longer than 1024 characters. Reject a username that is empty after trimming or longer
   than 64 characters with `400 validation_failed`. Add the TEST-4 cases.
+- **Restore drain and recovery restore (BAK-8, BAK-11, BAK-12, #66, #67):** Postgres apps add the activity lock:
+  each process holds it shared (a lease on the control connection) while it has any `/api/` request or job in
+  progress, checks the state inside it, and aborts its requests if the control connection drops; a restore takes it
+  exclusively before the write lock. SQLite apps drain a restore with a counter of every request and job. Add the
+  `restore_failed` local state and the recovery restore: from `restore_failed`, the recovery session can preview and
+  restore without a pre-restore backup or rollback; on failure the app stays in `restore_failed`. Starting an
+  operation updates the state conditionally (`WHERE state = 'idle'`) and releases every lock it took on every exit.
 - **Data writes by effect (BAK-8, ALT-2, SEC-8, #58):** declare `config: { writesData }` on every route and job and
   route every write to the main database or `uploads/` through `withDataWrite()` (`server/dataWrite.ts`), which
   applies the barrier and makes writing functions throw outside it. Generate the ALTCHA HMAC key (and any other
@@ -131,6 +138,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- BAK-12: a third advisory lock, the activity lock, makes a Postgres restore wait for every request and job in every
+  process, not only writes; reads no longer run during a restore (#66). BAK-8, BAK-11: a failed restore has its own
+  state, and the recovery session can start a recovery restore from it instead of getting `409` (#67).
 - Header and UI-15: the `assets/` links point at this version's tag (`blob/v6.0.0/…`) instead of `main`, so a
   pinned copy links to its own assets; `scripts/check_spec.py` checks that every repository link uses the current
   version's tag. STACK-1: the note on the `engines` upper bound no longer says Node.js 27 is never LTS (#59).
