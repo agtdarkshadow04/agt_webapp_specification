@@ -7,6 +7,46 @@ major for a new or stricter MUST, minor for a new SHOULD/MAY or section, patch f
 Versions before 4.0.0 were developed in the reference implementation's repository
 (`agtdarkshadow04/agt_event_calendar`, `docs/agt-webapp-spec.md`); the PR numbers below refer to that repository.
 
+## [6.0.0] - Unreleased
+
+### Upgrade notes
+
+- **Manifest (BAK-2, BAK-7):** write exactly the listed manifest fields, with `formatVersion` as the integer `1`;
+  list every archive entry except `manifest.json`; reject archives with unlisted or missing entries, unsafe paths, or
+  a newer `formatVersion` (`422 archive_rejected`). Keep restoring every older `formatVersion`.
+- **Restore (BAK-3):** `action=restore` re-runs the whole preview validation on its own upload; remove any preview
+  token or cached preview state.
+- **Operation lock (BAK-8):** add one in-process lock with the states `idle`, `backup`, `restore`. A second backup or
+  restore gets `409 conflict`. During a backup, data writes wait up to 30 s, then get `503 maintenance` with
+  `Retry-After: 10`. During a restore, every `/api/` route except `GET /api/health` returns `503 maintenance`, health
+  returns `{ "status": "maintenance" }`, and background jobs pause. Add `maintenance` to the error codes (API-6) and
+  show it in the UI as a notice that retries once (FE-5).
+- **Snapshot (BAK-9):** take the database snapshot and copy the uploads inside the `backup` lock.
+- **Restore steps (BAK-4, BAK-10, BAK-11):** drain in-flight requests (30 s, else `409 conflict`), close and reopen the
+  database or `pg.Pool`, run the post-restore health check, roll back on failure (Postgres: from the pre-restore
+  backup), and on a failed rollback stay in maintenance with `<dataDir>/restore-failed.json` and refuse to start while
+  that file exists. Sessions are ended only by a successful restore.
+- **Tests and docs:** add the TEST-4 backup format, concurrency and failure tests, and the README Troubleshooting
+  entries for "maintenance in progress" and recovering from a failed restore.
+
+### Added
+
+- §12.1 *Archive format*: the full `manifest.json` schema with an example, path rules, and BAK-7 on format versions
+  (#5).
+- §12.2 *Consistency and concurrency*: BAK-8, the operation lock with `503 maintenance` and `409 conflict`, and BAK-9,
+  consistent snapshots (#5).
+- BAK-10 (rollback) and BAK-11 (failed rollback: maintenance, marker file, refusal to start) (#5).
+- API-6: `503 maintenance`. TEST-4: backup format, concurrency and failure tests. This also covers #11's test of
+  backups under concurrent writes.
+
+### Changed
+
+- BAK-3: `action=restore` re-validates its upload; there is no state between preview and restore (#5).
+- BAK-4: restore is an ordered procedure with draining, a database or pool reopen, and a post-restore health check
+  (#5).
+- SRV-11: `GET /api/health` reports `maintenance` during a restore. FE-5: how clients show `503 maintenance`.
+- DOC-1: Troubleshooting covers maintenance and failed restores.
+
 ## [5.2.0] - 2026-11-10
 
 ### Added
