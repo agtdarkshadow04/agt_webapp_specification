@@ -284,11 +284,47 @@ agt_<app_snake>/
 - **API-6** Every non-2xx response has this body:
 
   ```json
-  { "error": "validation_failed", "message": "The event is invalid.", "fields": [{ "field": "name", "message": "Name is required." }] }
+  {
+    "error": "validation_failed",
+    "message": "The event is invalid.",
+    "fields": [
+      { "field": "name", "code": "required", "message": "Name is required." },
+      { "field": "description", "code": "too_long", "message": "Description must be at most 4000 characters.", "params": { "max": 4000 } }
+    ]
+  }
   ```
 
-  `error` is a stable snake_case code that clients may branch on. `message` is English text for humans.
-  `fields` appears only for field-level validation errors. Standard codes and statuses:
+  ```json
+  { "error": "rate_limited", "message": "Too many requests. Try again in 42 seconds.", "params": { "retryAfterSeconds": 42 } }
+  ```
+
+  | Field | Type | Meaning |
+  | --- | --- | --- |
+  | `error` | string | Stable snake_case code; clients translate it (I18N-6) and may branch on it |
+  | `message` | string | English text for humans, logs and API users; clients show it only for codes they do not know |
+  | `params` | object, optional | Values the translated text needs (table below). Number, string or boolean values only |
+  | `fields` | `FieldError[]`, optional | Only for field-level validation errors |
+
+  A **`FieldError`** (also used for `notices`, API-2) is `{ field, code, message, params? }`: `field` is the request
+  property (dotted for nested ones, e.g. `links.2`), `code` a field code from the table below, `message` English
+  text, and `params` the values that code needs.
+
+  | Field `code` | When | `params` |
+  | --- | --- | --- |
+  | `required` | Missing or empty | — |
+  | `too_long` | Longer than allowed | `{ max }` (characters) |
+  | `too_short` | Shorter than allowed | `{ min }` (characters) |
+  | `out_of_range` | Number or date outside the allowed range | `{ min?, max? }` |
+  | `too_many` | A list has too many items | `{ max }` |
+  | `invalid_format` | Wrong format (UUID, date, time zone, portal code, …) | — |
+  | `invalid_url` | Not an absolute `http:` or `https:` URL | — |
+  | `not_allowed` | Not one of the allowed values | — |
+  | `duplicate` | Must be unique and is not | — |
+  | `mismatch` | Must equal another field and does not (e.g. password confirmation) | `{ other }` (field name) |
+  | `same_as_setup_password` | The new admin password equals the setup password (AUTH-5) | — |
+
+  An app MAY add field codes for checks this table does not cover, in the same snake_case form; they are listed with
+  the error codes in the `ErrorBody` schema description (below). Standard codes and statuses:
 
   | Status | `error` | When |
   | --- | --- | --- |
@@ -307,11 +343,20 @@ agt_<app_snake>/
   | 503 | `setup_password_missing` | First run, but no setup password configured |
   | 503 | `maintenance` | A restore is running, or a write waited too long for a backup (BAK-8); sent with `Retry-After` |
 
+  Error codes whose text needs a value send it in `params`:
+
+  | `error` | `params` |
+  | --- | --- |
+  | `rate_limited`, `maintenance` | `{ retryAfterSeconds }` (the `Retry-After` header is sent too) |
+  | `file_too_large`, `field_too_large` | `{ maxBytes }` |
+  | `defined_in_config` | `{ key }` (the setting key) |
+
   The table is the standard set, not an exhaustive list. Use a standard code whenever its situation applies.
   An app MAY add its own codes for situations the table does not cover (e.g. `file_required` for a multipart
   request without its file part); they follow the same snake_case form and status rules. The `ErrorBody`
   schema's `error` property SHOULD list every code the app returns, standard and app-specific, in its OpenAPI
-  `description`.
+  `description`, and the `FieldError` schema's `code` property every field code. Both schemas declare `params` as
+  an optional object of string, number or boolean values.
 
 - **API-7** Timestamps in API payloads are ISO 8601 UTC strings ending in `Z`. Dates without a time are
   `YYYY-MM-DD`.
@@ -1055,12 +1100,13 @@ records the outcome, the server log entry records the error. The two share the r
   `agt_<app_snake>_*` keys, read defensively (invalid JSON → defaults).
 - **FE-4** Deep links use query parameters on `/` (e.g. `?event_id=<uuid>`), not paths, and are rewritten
   with `history.replaceState` when normalized.
-- **FE-5** Every load and mutation has visible loading, success and error states. Errors show the server's
-  `message` (and per-field `fields` next to the fields). Long operations (import, restore) show a preview
+- **FE-5** Every load and mutation has visible loading, success and error states. Errors show the translated text of the
+  `error` code and of each field `code`, next to their fields (I18N-6); the server's English `message` is only the
+  fallback for unknown codes. Long operations (import, restore) show a preview
   first and require an explicit confirm. `503 maintenance` is shown as a non-blocking notice and retried once
   after `Retry-After` (BAK-8).
-- **FE-6** Forms validate with the same `src/lib/validation.ts` functions the server uses, so messages match.
-  The server remains the authority.
+- **FE-6** Forms validate with the same `src/lib/validation.ts` functions the server uses, so field codes and
+  messages match (I18N-6). The server remains the authority.
 - **FE-7** Icons are inline React SVG components in `src/components/Icons.tsx` (`aria-hidden="true"`), never
   an icon font or external sprite.
 - **FE-8** Framework-free logic (date math, filtering, parsing, validation, settings) lives in `src/lib/`
@@ -1265,7 +1311,16 @@ All AGT apps MUST look like one family.
   `localStorage["agt_<app_snake>_settings"]` and shared by the public UI and the admin dashboard. Default
   language: English (do not auto-detect unless the app's AGENTS.md says so).
 - **I18N-5** Format dates, times and numbers with `Intl` using the chosen locale and time zone. Server error
-  `message`s are English; the client may map known `error` codes to translated text.
+  `message`s are English (API-6); the client translates them (I18N-6).
+- **I18N-6** **Translated errors.** The client MUST show every error in the user's language:
+  - `src/translations.ts` (and `src/admin/i18n.ts` for admin-only codes) has one string for every standard `error`
+    code, every standard field `code` (API-6) and every app-specific code, in all locales, with `{param}` placeholders
+    filled from `params` by `formatTranslation()`. Field strings also get the translated field label as `{field}`.
+  - `src/lib/errors.ts` exports `errorText(error, translations)` and `fieldErrorText(fieldError, label,
+    translations)`; FE-5 uses only these. They fall back to the server's English `message` only for a code the
+    client does not know (e.g. an older client talking to a newer server).
+  - The shared validators (FE-6) return `FieldError`s with `code` and `params`, so a form shows the same translated
+    text whether the client or the server found the problem.
 
 ## 18. Deployment
 
@@ -1551,7 +1606,10 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   - Postgres apps: a backup's dump has no entries in the `logs` schema, and a restore, including one from a dump
     that does contain the `logs` schema, leaves the log rows and `log_meta` unchanged (BAK-2, BAK-4, LOG-17);
   - migrations from an empty database and from each released schema version;
-  - translation completeness for public and admin strings;
+  - translation completeness for public and admin strings, including a string in every locale for every standard
+    and app-specific `error` code and field `code` (I18N-6);
+  - error bodies: every `400 validation_failed` response has a `code` on each field error, and `rate_limited`,
+    `maintenance`, `file_too_large`, `field_too_large` and `defined_in_config` carry their `params` (API-6);
   - versioning (§21): `package.json` holds a valid SemVer version (VER-1); the newest `CHANGELOG.md` heading is
     that version; every major version's section has **Upgrade notes**; `/api/openapi.json` reports the same
     version;

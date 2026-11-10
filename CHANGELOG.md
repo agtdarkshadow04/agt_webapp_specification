@@ -28,6 +28,13 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   that file exists. Sessions are ended only by a successful restore.
 - **Tests and docs:** add the TEST-4 backup format, concurrency and failure tests, and the README Troubleshooting
   entries for "maintenance in progress" and recovering from a failed restore.
+- **Error bodies (API-6, #9):** add `code` (and `params` where the table lists them) to every `FieldError`, including
+  `notices`, and `params` to the error codes that need values (`rate_limited`, `maintenance`, `file_too_large`,
+  `field_too_large`, `defined_in_config`). The shared validators return the same codes. Update the `ErrorBody` and
+  `FieldError` schemas. Existing fields keep their meaning, so older clients keep working.
+- **Translated errors (I18N-6, #9):** add a translation in every locale for every error code and field code, add
+  `src/lib/errors.ts` with `errorText()` and `fieldErrorText()`, and show errors only through them (FE-5). Add the
+  TEST-4 translation and error body checks.
 
 ### Added
 
@@ -36,6 +43,10 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - §12.2 *Consistency and concurrency*: BAK-8, the operation lock with `503 maintenance` and `409 conflict`, and BAK-9,
   consistent snapshots (#5).
 - BAK-10 (rollback) and BAK-11 (failed rollback: maintenance, marker file, refusal to start) (#5).
+- API-6: the error body's `params`, and `code` and `params` on every `FieldError`, with a standard table of field
+  codes (#9).
+- I18N-6: clients translate every error code and field code in all locales; the English `message` is only a fallback
+  (#9).
 - API-6: `503 maintenance`. TEST-4: backup format, concurrency and failure tests. This also covers #11's test of
   backups under concurrent writes.
 
@@ -44,6 +55,7 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - BAK-3: `action=restore` re-validates its upload; there is no state between preview and restore (#5).
 - BAK-4: restore is an ordered procedure with draining, a database or pool reopen, and a post-restore health check
   (#5).
+- I18N-5, FE-5, FE-6: error text is translated by code, and the shared validators return field codes (#9).
 - SRV-11: `GET /api/health` reports `maintenance` during a restore. FE-5: how clients show `503 maintenance`.
 - DOC-1: Troubleshooting covers maintenance and failed restores.
 
