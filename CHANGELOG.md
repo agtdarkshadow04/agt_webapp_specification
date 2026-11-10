@@ -17,6 +17,14 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - CFG-2: `AGT_<APP>_TEST_DATABASE_URL`, the test database of Postgres apps (TEST-3).
 - API-6: `400 unknown_setting` and `400 invalid_setting` (CFG-8) in the table of standard codes.
 
+### Changed
+
+- The PostgreSQL migration rule is now **DATA-11** (#14). It was the second definition of DATA-5, so a citation of
+  "DATA-5" did not name one rule. DATA-5 stays the SQLite rule; the content of both rules is unchanged. Apps that
+  cite DATA-5 for PostgreSQL migrations (in code comments or the deviations table of `AGENTS.md`) change the
+  citation to DATA-11 when they move to this version. `scripts/check_spec.py` no longer exempts DATA-5 from the
+  duplicate-ID check.
+
 ### Fixed
 
 - Postgres backups included the log store and a restore overwrote it (#6), contrary to LOG-17: `pg_dump` dumped the
