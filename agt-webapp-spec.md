@@ -132,6 +132,7 @@ Add a row (next free port) when you create an app.
 | Logging | `pino` (Fastify's logger) to stdout and the log store ([§13](#13-logging)) |
 | Server bundle | `esbuild` → `dist-server/index.mjs` |
 | Tests | `node:test` + `node:assert/strict`; Fastify `inject()` for HTTP |
+| Browser tests (dev only, TEST-6) | `@playwright/test` with Chromium; optionally `@axe-core/playwright` |
 | Lint | `tsc -b` (no ESLint, no Prettier) |
 
 - **STACK-2** The client MUST NOT use a router library or a global state library (Redux, Zustand, …).
@@ -1405,6 +1406,8 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   | `test:server` | esbuild `server/test/*.test.ts` → `.test-build/server`, then `node --test --test-concurrency=1` |
   | `check` | `npm run lint && npm test && npm run build` |
 
+  Apps with browser tests add `test:e2e` (`npm run build && playwright test`, TEST-6). It is not part of `check`,
+  because it needs a browser.
 - **TEST-2** `npm run check` MUST pass before every commit and in CI.
 - **TEST-3** Client tests run in plain Node without a DOM; stub `globalThis.window` / `localStorage` where
   needed. Server tests use `createTestServer()` from `server/test/helpers.ts`, which creates a temp data dir,
@@ -1448,6 +1451,58 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
     - the warnings/errors summary and the "seen" marker;
     - CSV exports neutralize formula-like cells.
 - **TEST-5** Never skip, disable or weaken a test to make a change pass.
+
+### 19.1 Acceptance tests
+
+`npm run check` tests the server and shared logic. The rules below cover what it cannot: the UI in a real browser,
+accessibility, the two installation methods, and upgrades. Each SHOULD run before every release; the release PR
+records the results (VER-12).
+
+- **TEST-6** **Browser tests.** Apps SHOULD have a Playwright suite in `tests/e2e/*.spec.ts`, run by
+  `npm run test:e2e` in CI and before every release. Playwright's `webServer` starts the built server
+  (`node dist-server/index.mjs`) with a temporary data directory, a test `config.yaml` and a setup password, so
+  each run starts from first run. Chromium is enough. The suite covers at least:
+  - both entries (`/` and `/admin`) load with no console errors and no CSP violations (listen for `console` and
+    `securitypolicyviolation`);
+  - first-run setup and admin sign-in through the UI (AUTH-5);
+  - every dialog: it opens from the keyboard, Tab stays inside it, Escape closes it, and focus returns to the opener
+    (A11Y-2);
+  - accessible names: every button and input is found by role and name (`getByRole(…, { name })`), and an automated
+    check such as `@axe-core/playwright` with the WCAG 2.2 AA rules reports no violations on each page (A11Y-1,
+    A11Y-3, A11Y-5);
+  - no horizontal page scroll (`scrollWidth <= innerWidth`) at 300, 520, 640, 760 and 1180 px wide, and at 300 px
+    with the 2× font scale (UI-12, A11Y-6);
+  - status messages appear in a `role="status"` or `aria-live` region (A11Y-4).
+- **TEST-7** **Manual accessibility check.** Before every release, a person SHOULD check what automated tests
+  miss, and tick this list in the release PR:
+  - every public and admin flow works with the keyboard alone, with a visible focus indicator;
+  - a screen reader (NVDA with Firefox, or VoiceOver with Safari) announces the main flows, dialogs and status
+    messages sensibly;
+  - any colour pair added since the last release meets the A11Y-1 contrast ratios;
+  - the UI works at 200 % browser zoom and at the 2× font scale, and with `prefers-reduced-motion` on (UI-11);
+  - every locale renders, including Thai, Chinese, Hindi and Japanese in the fallback fonts (UI-3).
+- **TEST-8** **Installation smoke tests.** Before every release, both installation methods SHOULD be run from a
+  clean checkout of the release commit, following the README exactly:
+  - **Docker Compose** (DEP-1, DEP-2): create `config.yaml` and `.env` with a setup password,
+    `docker compose up -d --build`, wait until `docker compose ps` reports the service `healthy`, then check that
+    `curl -fsS http://127.0.0.1:<port>/api/health` succeeds, that `/api/setup/status` reports
+    `{ adminExists: false, setupPasswordConfigured: true }`, and that the port is published on `127.0.0.1` only
+    (SEC-4). Finish with `docker compose down -v`.
+  - **Local installation** (DEP-6 to DEP-8): on Ubuntu 24.04 or Debian 12/13 (a VM, or a container that runs
+    systemd), follow the README's steps; `systemctl is-active agt-<app>` reports `active`, the same `curl`
+    checks pass, and `journalctl -u agt-<app>` shows no errors.
+  - **Behind a proxy** (AUTH-8, DEP-10): a server test SHOULD check that with `server.trustProxy` set, a request
+    from the proxy address with `X-Forwarded-Proto: https` gets a session cookie with `Secure`, and that without
+    `trustProxy` the header is ignored.
+- **TEST-9** **Upgrade and rollback test.** Before every release, the upgrade from the previous release tag
+  SHOULD be tested with at least the Docker method, following the README (VER-13): install the previous tag,
+  complete setup, create sample data (at least one of each resource and one upload) and download a backup; upgrade
+  to the release commit as *Upgrading* says (and as the upgrade notes say, for a major version); check that the data
+  is intact, the migrations ran (server log) and the dashboard shows the new version (VER-2); then roll back as
+  *Rolling back* says and check that the previous version runs with the restored data.
+
+Testing backups under concurrent writes depends on a backup consistency rule that the spec does not have yet, so it
+is not listed here.
 
 ## 20. Documentation
 
@@ -1592,7 +1647,7 @@ higher level.
   deleted: a bad release is fixed by a new patch release.
 - **VER-12** Agents prepare releases but do not publish them on their own. The **release PR** only changes the
   version's CHANGELOG heading from `Unreleased` to the release date; its description SHOULD carry the dependency
-  review (STACK-6). Agents create the tag and the GitHub Release
+  review (STACK-6) and the results of the acceptance tests (TEST-6 to TEST-9). Agents create the tag and the GitHub Release
   only when the maintainer explicitly asks for that release.
 - **VER-13** Installations run released versions. The README's install and upgrade steps check out a release tag,
   not `main` (DEP-5, DEP-6, DEP-9), and tell operators to read the CHANGELOG upgrade notes and take a backup
