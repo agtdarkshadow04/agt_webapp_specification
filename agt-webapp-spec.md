@@ -1101,7 +1101,9 @@ agt_<app_snake>/
      admin row's hash passes AUTH-2; foreign keys hold (the restore re-created them); every upload the data
      references is in the archive.
   5. **Clean up** in a `finally` (step 2's statements) and release the lock. A process also empties the preview
-     database at startup, after a preview cut short by a crash.
+     database at startup, after a preview cut short by a crash, but only while holding the same preview lock: it
+     calls `pg_try_advisory_lock` on it and, if another process holds it, skips the cleanup (that preview empties
+     the database in its own `finally`). It never drops the preview schema without the lock.
 
   The app role is not a superuser (DATA-11), so even a dump that passes the allowlist can only create and fill
   tables in the two databases that role owns.
@@ -1114,7 +1116,12 @@ agt_<app_snake>/
   2. Take the `restore` lock and drain (BAK-8; Postgres apps: in every process, BAK-12). If the drain does not
      finish within 30 seconds, return `409 conflict` ("The server is busy. Try again.") without changing anything.
   3. Write an automatic pre-restore backup to `<backupsDir>/pre-restore-backup-<timestamp>.zip` and keep it
-     (Postgres apps: then store its file name in `control.operation.pre_restore_backup`, BAK-12).
+     (Postgres apps: then store its file name in `control.operation.pre_restore_backup`, BAK-12). Postgres apps
+     also write the **rollback list**: `pg_restore --list` of that backup's own dump, run through the BAK-3
+     allowlist, saved as `<backupsDir>/pre-restore-backup-<timestamp>.list` and deleted together with the backup.
+     A table of contents is specific to its archive (each line starts with that archive's dump IDs), so the
+     incoming archive's list can never be used for the pre-restore dump. If the pre-restore dump fails the
+     allowlist, stop with `500 internal` before step 4: nothing has changed.
   4. Replace the database and the uploads:
      - SQLite: prepare the new files beside the live ones, checkpoint and close `context.db`, rename the live files
        aside, rename the new ones into place, and reopen `context.db`.
@@ -1152,8 +1159,9 @@ agt_<app_snake>/
   flags are not a substitute: `--exclude-schema=logs` skips the objects in the schema but still runs
   `DROP SCHEMA IF EXISTS logs`, which fails the restore.
 - **BAK-10** **Rollback.** If step 4, 5 or 6.1 of BAK-4 fails, the app rolls back before releasing the lock: SQLite renames
-  the set-aside files back and reopens them; Postgres restores the pre-restore backup's dump with the same
-  `pg_restore` command; both rename the uploads back. It then runs the step 5 health check again. If that passes,
+  the set-aside files back and reopens them; Postgres restores the pre-restore backup's dump with
+  `pg_restore --clean --if-exists --single-transaction --no-owner --no-privileges --exit-on-error
+  --use-list=<rollback list>` (BAK-4 step 3), never with the incoming archive's list; both rename the uploads back. It then runs the step 5 health check again. If that passes,
   the restore request returns `500 internal` with the message "The restore failed and was rolled back. Nothing was
   changed.", the lock returns to `idle`, and a server log `error` (source `backup`) records the cause. Sessions are
   ended only by a successful restore.
@@ -1979,7 +1987,11 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
     unexpected schema, an unknown table or an ACL entry are each rejected with `422` before anything is restored; a
     dump with a newer schema version, a missing table or a bad admin hash is rejected after the preview restore; the
     preview database is empty after every preview, including a failed or timed-out one; a second preview at the same
-    time gets `409`; the live data is unchanged by any preview;
+    time gets `409`; the live data is unchanged by any preview; a process started while a preview is paused (test
+    hook) leaves the preview database alone, the preview completes, and the database is empty afterwards;
+  - Postgres rollback (BAK-10): with an incoming archive whose dump IDs and schema version differ from the live
+    database, a failure injected after the live restore rolls back to exactly the original rows and uploads, using
+    the rollback list written in BAK-4 step 3; the list is deleted with its pre-restore backup;
   - Postgres role (DATA-11): the app refuses to start when connected as a superuser;
   - migrations from an empty database and from each released schema version;
   - translation completeness for public and admin strings, including a string in every locale for every standard

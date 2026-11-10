@@ -43,6 +43,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - **Setup password and username (AUTH-3, AUTH-5, SRV-8, #45):** at startup, while no admin exists, refuse to start if
   `AGT_<APP>_SETUP_PASSWORD` is longer than 1024 characters. Reject a username that is empty after trimming or longer
   than 64 characters with `400 validation_failed`. Add the TEST-4 cases.
+- **Rollback list and preview cleanup (BAK-3, BAK-4, BAK-10, #68, #69):** Postgres apps write a rollback list from
+  the pre-restore backup's own dump (`pre-restore-backup-<timestamp>.list`, through the allowlist) and roll back with
+  it; startup cleanup of the preview database takes the preview lock first and skips when a preview holds it.
 - **Restore drain and recovery restore (BAK-8, BAK-11, BAK-12, #66, #67):** Postgres apps add the activity lock:
   each process holds it shared (a lease on the control connection) while it has any `/api/` request or job in
   progress, checks the state inside it, and aborts its requests if the control connection drops; a restore takes it
@@ -138,6 +141,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- BAK-10: the Postgres rollback uses a list made from the pre-restore backup's own dump instead of the incoming
+  archive's list (#68). BAK-3: startup cleanup of the preview database takes the preview lock (#69).
 - BAK-12: a third advisory lock, the activity lock, makes a Postgres restore wait for every request and job in every
   process, not only writes; reads no longer run during a restore (#66). BAK-8, BAK-11: a failed restore has its own
   state, and the recovery session can start a recovery restore from it instead of getting `409` (#67).
