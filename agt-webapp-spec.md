@@ -1318,11 +1318,20 @@ All AGT apps MUST look like one family.
   repository's `assets/` (UI-15); never hotlink them.
 - **UI-15** **Asset sources and licences.** The logo and fonts named in UI-3, UI-5 and UI-14, and the base stylesheet (UI-16), come from
   [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/main/assets/README.md) in the spec's source repository, at the tag of the spec version the app follows.
-  Copy them unmodified, under the same file names, and check each file against the SHA-256 in `assets/README.md`. Apps
-  SHOULD ship the licence files listed there next to their fonts (`public/fonts/`), and SHOULD credit every bundled
-  font in the README (name, everyone in its credit line in `assets/README.md`, licence, source link). The two
-  No Man's Sky fonts (NMS Futura, NMS Glyphs Mono) are credited to their embedded authors and to
-  Hello Games. The licences themselves apply whatever this spec says:
+  Copy them unmodified, under the same file names, and check each file against the SHA-256 in `assets/README.md`.
+  The fonts' licences make the next two points conditions of redistribution, so they are requirements:
+  - **Licence files.** Apps MUST ship, unmodified, `public/fonts/NMSFuturaProBook-OFL.txt` (OFL 1.1 requires the
+    licence to travel with the font) and, if they bundle the flag font, `public/fonts/TwemojiCountryFlags-LICENSE.md`
+    (MIT notice and CC BY 4.0 attribution), copied from `assets/licenses/` and checked against their SHA-256. They
+    are served and included in the Docker image like every other file in `public/`.
+  - **Credits.** The README MUST have a **Credits** section (DOC-1) with one entry per bundled font, giving its
+    name, everyone in its **Credit** column in `assets/README.md` (for the two No Man's Sky fonts, NMS Futura and NMS
+    Glyphs Mono, their embedded authors and Hello Games), its licence with a link to the licence (or to the shipped
+    licence file), and its source link. For NMS Glyphs Mono (CC BY-NC-SA 4.0), the entry also states that the font
+    is used unmodified and only non-commercially. The base stylesheet and the logo need no entry.
+
+  No modification notice is needed, because apps MUST NOT modify the assets. The licences themselves apply whatever
+  this spec says:
   the AGT logo is © Alliance of Galactic Travellers with all rights reserved and is used only in AGT apps, and
   NMS Glyphs Mono is CC BY-NC-SA 4.0, so an app that shows portal glyphs is non-commercial.
 
@@ -1868,6 +1877,7 @@ Backups under concurrent writes and failures during a restore are covered by ser
       "maintenance in progress", recovering from a failed restore by hand with the pre-restore backup and the
       `restore-failed.json` marker (BAK-11), and deleting `*.restore-old-*` paths a restore could not remove
       (BAK-4); pointing to the Server log tab first)
+  12. **Credits** (every bundled font with its authors, licence and source, UI-15)
 
 ### 20.2 AGENTS.md (for agents)
 
@@ -2033,7 +2043,7 @@ Use this list to review a new app or a large change. Every item must be true or 
       error badge; audit via one hook, coalesced, IP-pseudonymized, append-only; retention settings; not in
       backups (§13).
 - [ ] Two Vite entries; `apiRequest()`; no client caching of server data.
-- [ ] Design tokens verbatim; AGT fonts and logo bundled; portal codes shown in NMS Glyphs Mono with hex
+- [ ] Design tokens verbatim; AGT fonts and logo bundled, with their licence files and a README Credits section (UI-15); portal codes shown in NMS Glyphs Mono with hex
       text (UI-14); reference component classes; responsive to 300 px.
 - [ ] WCAG 2.2 AA: dialogs via `useDialog`, labelled icon buttons, live regions, font scale.
 - [ ] All 10 locales complete for public and admin strings; no hard-coded UI text.

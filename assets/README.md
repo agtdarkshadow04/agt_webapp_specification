@@ -2,7 +2,8 @@
 
 These are the fonts and the logo that AGT web apps bundle (UI-3, UI-5, UI-14, UI-15). Apps copy them from this
 directory at the tag of the spec version they follow, unmodified, to the `public/` paths those rules name
-(`public/<file>` for the logo and the NMS fonts, `public/fonts/` for the flag font and its licence file).
+(`public/<file>` for the logo and the NMS fonts, `public/fonts/` for the flag font and both licence files).
+Shipping the licence files and crediting the fonts are requirements (UI-15), because the licences require them.
 `scripts/check_spec.py` checks that every file here matches its SHA-256 below.
 
 | File | Used for | SHA-256 |
@@ -12,6 +13,8 @@ directory at the tag of the spec version they follow, unmodified, to the `public
 | `fonts/NMS-Glyphs-Mono-fixed2026.ttf` | `NMS Glyphs Mono`, portal glyphs (UI-14); required where portal codes are shown | `bd996c81bd0c4660adf10087335ab9fd1ce420c2036ed2346676c68e8ce387fc` |
 | `css/agt-base.css` | Base stylesheet: tokens, fonts, page background, shared components (UI-16); required, copied to `src/agt-base.css` | `eded1c5ac13280c1d752b05291766e5de1fbd8918ef6731a2b8e69d0a19cabf8` |
 | `fonts/TwemojiCountryFlags.woff2` | `Twemoji Country Flags` (UI-3); required where flags are shown | `9f04f14429bb6a9f415c7a4dd902a918d7e81a4f7526c415496fdb063954e3b8` |
+| `licenses/NMSFuturaProBook-OFL.txt` | OFL 1.1 for NMS Futura; required, copied to `public/fonts/NMSFuturaProBook-OFL.txt` | `e77bd97ea16773878878adbf0ac357fe1b355bdf50ca2042580240e0e0eba68c` |
+| `licenses/TwemojiCountryFlags-LICENSE.md` | Licence for Twemoji Country Flags; required where flags are shown, copied to `public/fonts/TwemojiCountryFlags-LICENSE.md` | `f12e4dfd8d656f0134ae2d54ff9683a0fdb15dd9e7814352ff3cad80d1e28c3d` |
 
 ## Sources and licences
 

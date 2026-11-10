@@ -68,6 +68,11 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   file now defines: the `:root` tokens, the three `@font-face` rules, `html`/`body`/`body::before`, selection,
   scrollbars, `:focus-visible`, `.sr-only`, the `.button`, `.field`, `.modal-*`, note and `.admin-notice` rules,
   `.portal-glyphs`/`.portal-code-value` and the reduced-motion override. Keep app-specific variants as modifier classes.
+- **Asset licences and credits (UI-15, DOC-1, #41):** ship `public/fonts/NMSFuturaProBook-OFL.txt` and, with the flag
+  font, `public/fonts/TwemojiCountryFlags-LICENSE.md`, unmodified and checked against their new SHA-256 rows in
+  `assets/README.md`. Add a README **Credits** section after Troubleshooting with each bundled font's name,
+  everyone in its credit line, its licence and link, and its source; NMS Glyphs Mono's entry says it is used unmodified
+  and non-commercially.
 - **Translated errors (I18N-6, #9):** add a translation in every locale for every error code and field code, add
   `src/lib/errors.ts` with `errorText()` and `fieldErrorText()`, and show errors only through them (FE-5). Add the
   TEST-4 translation and error body checks.
@@ -95,6 +100,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- UI-15: shipping the licence files and crediting the fonts are MUST instead of SHOULD, because the licences require
+  them; DOC-1 adds a Credits section; `assets/README.md` lists the licence files with SHA-256, and
+  `scripts/check_spec.py` checks them too (#41).
 - TEST-6: CI installs the Playwright browser and its system libraries; the suite runs with one worker and a setup
   project for first-run setup; REPO-1 lists `playwright.config.ts` and `tests/e2e/`, and REPO-2 ignores Playwright's
   output directories (#40).
