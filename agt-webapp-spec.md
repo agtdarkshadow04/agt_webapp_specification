@@ -621,10 +621,20 @@ agt_<app_snake>/
   64-byte key, input normalized with NFKC, stored as `scrypt$N$r$p$<salt b64>$<hash b64>`. Plaintext passwords
   are never stored or logged. scrypt needs about `128 · r · (N + p + 2)` bytes, which for these parameters is
   just over Node's default `maxmem` of 32 MiB, so a call without `maxmem` fails with
-  `ERR_CRYPTO_INVALID_SCRYPT_PARAMS`. Every scrypt call MUST therefore pass `maxmem`:
-  - hashing: `{ N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }`;
-  - verifying: use the `N`, `r` and `p` from the stored hash, with `maxmem` of at least `128 · r · (N + p + 2)`
-    bytes computed from them. Use twice that for headroom (e.g. `2 * 128 * r * (N + p + 2)`).
+  `ERR_CRYPTO_INVALID_SCRYPT_PARAMS`. Every scrypt call, hashing and verifying, MUST pass the fixed options
+  `{ N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }`; `maxmem` is never computed from a stored hash.
+
+  Verifying MUST first check the stored hash and reject it, **without calling scrypt**, unless all of these hold:
+  - it has exactly six `$`-separated fields and the first is `scrypt`;
+  - `N`, `r` and `p` are decimal integers without sign or leading zeros, and equal a supported parameter profile.
+    The only profile is `N = 32768, r = 8, p = 1`; list profiles in one constant in `server/passwords.ts`, and add a
+    new one only together with the code that rehashes on the next successful login;
+  - the salt and the hash are standard base64 that decodes to exactly 16 and 64 bytes.
+
+  A stored hash that fails this check (corrupted, edited in the database, or from a crafted backup) can never
+  verify: login and the current-password check of AUTH-4 return the same `401 invalid_credentials` as a wrong
+  password, and the server log gets an `error` (source `auth`, "The stored admin password hash is malformed or uses
+  unsupported scrypt parameters."; never the hash itself). Recovery is AUTH-7.
 - **AUTH-3** Admin passwords MUST be 12–1024 characters. The admin username is trimmed of surrounding whitespace
   and SHOULD then be 1–64 characters; it is stored as entered after trimming (no case folding or other
   normalization), so login compares the trimmed input with it exactly. Compare secrets (setup password,
@@ -937,7 +947,9 @@ agt_<app_snake>/
 - **BAK-3** Restore MUST first run a **preview** that validates without changing anything: manifest format
   and checksums (BAK-2, BAK-7), only expected paths, size and entry limits, database integrity
   (`PRAGMA integrity_check` / `pg_restore --list`), schema version (older → will be migrated; newer → refused),
-  required tables, and every upload through the image checks. The preview reports counts, warnings and how the
+  required tables, every upload through the image checks, and the admin row's password hash, if there is one,
+  through the AUTH-2 check (a hash that fails it is rejected with `422 archive_rejected`, because it could never
+  sign in). The preview reports counts, warnings and how the
   backup's `config.yaml` differs from the current one. Postgres apps: if the dump's table of contents
   (`pg_restore --list`) has entries in the `logs` schema (backups made before spec 5.1.0), the preview accepts it
   with the warning that its log tables will be ignored.
@@ -1692,7 +1704,10 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   - first-run setup: unset password (503), wrong password (401), reuse of setup password (400), missing CSRF
     header (403), success (201 + session), disabled after setup (410) even while the variable is set;
   - password hashing: hash a password and verify it with the exact production options (AUTH-2), and a wrong
-    password fails verification;
+    password fails verification; stored hashes with hostile or unsupported parameters (for example `N = 2^30`,
+    `r = 1024`, `p = 0`, `N = 16384`), a wrong field count, a non-numeric or leading-zero parameter, and a salt or
+    hash of the wrong length are rejected with `401 invalid_credentials` without calling scrypt (spy on it); a
+    backup whose admin hash fails the check is rejected by the preview;
   - login, logout, session expiry, password change ends other sessions;
   - every admin route rejects requests without a session (401) and mutations without CSRF (403);
   - config: unknown key and invalid value rejected; precedence; `409 defined_in_config`;
