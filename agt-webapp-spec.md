@@ -942,7 +942,9 @@ agt_<app_snake>/
       owner uuid,                  -- process running the operation (crypto.randomUUID() at startup)
       started_at timestamptz,
       pre_restore_backup text,     -- file name, set once BAK-4 step 3 has written it
-      admin_session_hash text      -- BAK-11: the session accepted while restore_failed
+      admin_session_hash text,     -- BAK-11 recovery session: SHA-256 of the restoring admin's session token,
+      admin_username text,         --   their username,
+      admin_session_expires_at timestamptz  --   and that session's expiry (AUTH-8)
     );
     INSERT INTO control.operation (id, state, generation) VALUES (1, 'idle', 0) ON CONFLICT (id) DO NOTHING;
     ```
@@ -965,12 +967,14 @@ agt_<app_snake>/
     1. `pg_try_advisory_lock` on the operation lock; if it fails, or `control.operation.state` is not `idle`, return
        `409 conflict` (BAK-8).
     2. In one transaction, set `state` to `backup` or `restore`, increment `generation`, and set `owner` and
-       `started_at`.
+       `started_at`. A restore also stores the recovery session (BAK-11) in `admin_session_hash`, `admin_username`
+       and `admin_session_expires_at`, so it exists even if the owner dies.
     3. `SET lock_timeout = '30s'` and take the write lock exclusively (`pg_advisory_lock`). On a timeout, set
        `state` back to `idle`, release the operation lock and return `409 conflict` ("The server is busy. Try
        again."). Once it has the lock, no write runs in any process.
-  - **Finishing.** The owner sets `state` to `idle` (or to `restore_failed`, BAK-11), then releases the write lock,
-    then the operation lock. Writes waiting for the lock find `idle` and proceed.
+  - **Finishing.** The owner sets `state` to `idle` and clears `pre_restore_backup` and the three recovery session
+    columns (or sets `state` to `restore_failed` and keeps them, BAK-11), then releases the write lock, then the
+    operation lock. Writes waiting for the lock find `idle` and proceed.
   - **Owner connection loss.** The owner listens for `error` and `end` on its control connection. Either one during
     an operation fails it **at once**, because PostgreSQL has released both locks: kill the `pg_dump` or
     `pg_restore` child (`SIGTERM`, then `SIGKILL` after 5 seconds), stop all file work (check an abort flag before
@@ -1059,21 +1063,28 @@ agt_<app_snake>/
   the restore request returns `500 internal` with the message "The restore failed and was rolled back. Nothing was
   changed.", the lock returns to `idle`, and a server log `error` (source `backup`) records the cause. Sessions are
   ended only by a successful restore.
-- **BAK-11** **Failed rollback.** If the rollback itself fails, the app MUST NOT serve the data:
+- **BAK-11** **Failed rollback.** If the rollback itself fails, or the owner of a restore fails (BAK-12), the app
+  MUST NOT serve the data:
   - It stays in the `restore` state (every `/api/` request gets `503 maintenance`), writes a server log `error`
     (source `backup`) naming the pre-restore backup file, and writes the marker file `<dataDir>/restore-failed.json`
-    (`{ "preRestoreBackup": "<file name>", "failedAt": "<ISO 8601>" }`). Postgres apps also set
+    (`{ "preRestoreBackup": "<file name or null>", "failedAt": "<ISO 8601>" }`). Postgres apps also set
     `control.operation.state` to `restore_failed`, so every process stays in the `restore` state (BAK-12).
-  - The admin who started the restore can still use the **Backup & restore** tab to restore the pre-restore backup
-    (or any other): their session is accepted, despite the maintenance state, for `GET /api/admin/session` and
-    `POST /api/admin/restore` only. SQLite apps keep it in memory until the process exits; Postgres apps store its
-    SHA-256 in `control.operation.admin_session_hash`, so every process accepts it (a session table restored by the
-    failed attempt cannot be trusted). A successful restore deletes the marker file, clears the hash and returns to
-    `idle`.
-  - If the process restarts while the marker file exists, it refuses to start (SRV-8) with a message naming the
-    pre-restore backup and the README section that explains how to restore it by hand; the operator deletes the
-    marker file once the data is restored. The marker file decides at startup: a Postgres process that starts with no
-    marker file while `control.operation.state` is `restore_failed` sets it to `idle` and clears the hash.
+  - **Recovery session.** When a restore starts, the app records the restoring admin's session: the SHA-256 of its
+    token, the username and the session's expiry (AUTH-8). SQLite apps keep it in memory; Postgres apps store it in
+    `control.operation` in the same transaction that sets `restore` (BAK-12), so it survives the owner. While the
+    restore is failed, that session, and only that one, is accepted despite the maintenance state, for
+    `GET /api/admin/session` (which returns the recorded username) and `POST /api/admin/restore` only, and only
+    until the recorded expiry; the session table restored by the failed attempt is never consulted. After the expiry,
+    recovery is by hand (README). A successful restore deletes the marker file, clears the recovery session and
+    `pre_restore_backup`, and returns to `idle`; so does every other normal end of a restore.
+  - **Startup.** A process refuses to start (SRV-8) while the marker file exists **or** (Postgres)
+    `control.operation.state` is `restore_failed`, with a message naming the pre-restore backup and the README
+    section that explains how to restore it by hand. If only one of the two is present, it also refuses, and the
+    message names the one that is missing: the app never clears `restore_failed` because a file is absent (the
+    shared data directory may be missing or not yet mounted). Once the data is restored, the operator clears both
+    explicitly: deletes the marker file and (Postgres) runs `UPDATE control.operation SET state = 'idle',
+    pre_restore_backup = NULL, admin_session_hash = NULL, admin_username = NULL, admin_session_expires_at = NULL
+    WHERE id = 1 AND state = 'restore_failed'`, as the README's Troubleshooting section shows.
 
 - **BAK-5** Restore MUST NEVER write `config.yaml`. If the backup contains one, the preview shows a line diff
   and offers it for download; the README explains how to put it in place by hand.
@@ -1805,6 +1816,11 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
       after the close, the child process killed), returns the other process to `idle` (backup) or puts it in
       `restore_failed` with the marker file written (restore), and no write runs in between;
     - the same advisory key held in another database of the same server is ignored;
+  - recovery (BAK-11): after a failed rollback the restoring admin's session works for `GET /api/admin/session`
+    (returning their username) and `POST /api/admin/restore` only, and stops working at its expiry; any other session
+    gets `503`; Postgres apps: when the owner dies mid-restore, the other process accepts the recovery session it
+    stored at the start; startup refuses with the marker file and the state, with only the marker file, and with
+    only `restore_failed` in the state;
   - failure (BAK-10, BAK-11): a failure injected after the swap, and one injected into the step 6.1 transaction,
     each roll back and leave the data, the settings and the sessions as they were; a failure injected into deleting
     the set-aside paths still returns `200`, lists the paths as warnings and releases the lock; a failure injected into the rollback leaves the app in maintenance with `restore-failed.json`
@@ -1928,8 +1944,8 @@ Backups under concurrent writes and failures during a restore are covered by ser
   9. **Content safety** (what is accepted and how it is rendered)
   10. **Development** (commands table, project layout table, link to `AGENTS.md` and this spec)
   11. **Troubleshooting** (refuses to start, setup password missing, locked out, rate limits, proxy/HTTPS,
-      "maintenance in progress", recovering from a failed restore by hand with the pre-restore backup and the
-      `restore-failed.json` marker (BAK-11), and deleting `*.restore-old-*` paths a restore could not remove
+      "maintenance in progress", recovering from a failed restore by hand with the pre-restore backup, then
+      clearing the `restore-failed.json` marker and (Postgres) the `restore_failed` state (BAK-11), and deleting `*.restore-old-*` paths a restore could not remove
       (BAK-4); pointing to the Server log tab first)
   12. **Credits** (every bundled font with its authors, licence and source, UI-15)
 

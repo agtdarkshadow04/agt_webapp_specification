@@ -43,6 +43,11 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - **Setup password and username (AUTH-3, AUTH-5, SRV-8, #45):** at startup, while no admin exists, refuse to start if
   `AGT_<APP>_SETUP_PASSWORD` is longer than 1024 characters. Reject a username that is empty after trimming or longer
   than 64 characters with `400 validation_failed`. Add the TEST-4 cases.
+- **Recovery session and startup (BAK-11, BAK-12, #56):** record the restoring admin's session hash, username and
+  expiry when a restore starts (Postgres: in `control.operation`, columns `admin_session_hash`, `admin_username`,
+  `admin_session_expires_at`); accept it only until that expiry; clear it on every normal end. Refuse to start while
+  the marker file or `restore_failed` is present, including when only one of them is; never clear `restore_failed`
+  automatically. Add the README steps to clear both by hand, and the TEST-4 recovery tests.
 - **Finishing a restore (BAK-4 step 6, BAK-10, #44):** drop locked settings and clear `sessions` in one transaction
   and roll back if it fails; name set-aside paths `<name>.restore-old-<timestamp>`; a failure deleting them is only a
   warning in the report and the server log, never deleted automatically later; release the lock in a `finally`;
@@ -107,6 +112,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- BAK-11: the recovery session is recorded when a restore starts, expires with the original session, and also covers a
+  restore whose owner died; a missing marker file no longer clears `restore_failed` at startup (#56).
 - AUTH-3: the 1–64 character limit on the trimmed username is a MUST (was SHOULD), matching the request schema.
   AUTH-5 and SRV-8: a setup password longer than the 1024-character request limit stops startup (#45).
 - CFG-1: the second source is the process environment, not only `.env`: operator secrets from `.env` plus the
