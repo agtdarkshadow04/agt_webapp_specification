@@ -994,8 +994,8 @@ All AGT apps MUST look like one family.
   `Twemoji Country Flags` (`/fonts/TwemojiCountryFlags.woff2`, `unicode-range: U+1F1E6-1F1FF`, keep its
   CC BY 4.0 licence file) wherever flags are shown; `NMS Glyphs Mono` for portal codes (UI-14). The fallback
   stack must render Thai, Chinese, Hindi and Japanese (system fonts), because NMS Futura does not cover them.
-  Apps that show text in the in-game Expedition alphabet MAY bundle `NMS Alphabet` (`/nms-alphabet.ttf`) the same
-  way; like the glyph font, it is never used for readable text.
+  The community `NMS Alphabet` font (Expedition alphabet, FontStruct) is not an AGT asset: its licence prohibits
+  hosting it as a web font, so apps do not bundle it.
 - **UI-14** Portal codes MUST be displayed as No Man's Sky portal glyphs using the bundled **NMS Glyphs Mono**
   typeface, copied from the spec repository's `assets/fonts/` (UI-15) to `public/NMS-Glyphs-Mono-fixed2026.ttf` (internal
   family name `NMS Glyphs`, style `Glyphs-Mono`). The font maps only the characters `0–9` and uppercase
@@ -1038,8 +1038,8 @@ All AGT apps MUST look like one family.
   [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/main/assets/README.md) in the spec's source repository, at the tag of the spec version the app follows.
   Copy them unmodified, under the same file names, and check each file against the SHA-256 in `assets/README.md`. Apps
   SHOULD ship the licence files listed there next to their fonts (`public/fonts/`), and SHOULD credit every bundled
-  font in the README (name, everyone in its credit line in `assets/README.md`, licence, source link). The three
-  No Man's Sky fonts (NMS Futura, NMS Glyphs Mono, NMS Alphabet) are credited to their embedded authors and to
+  font in the README (name, everyone in its credit line in `assets/README.md`, licence, source link). The two
+  No Man's Sky fonts (NMS Futura, NMS Glyphs Mono) are credited to their embedded authors and to
   Hello Games. The licences themselves apply whatever this spec says:
   the AGT logo is © Alliance of Galactic Travellers with all rights reserved and is used only in AGT apps, and
   NMS Glyphs Mono is CC BY-NC-SA 4.0, so an app that shows portal glyphs is non-commercial.

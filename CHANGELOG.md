@@ -11,16 +11,16 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Added
 
-- `assets/`: the AGT logo and the fonts apps bundle (NMS Futura, NMS Glyphs Mono, Twemoji Country Flags and the
-  optional NMS Alphabet), with SHA-256, source, copyright and licence for each in `assets/README.md`, and the licence
+- `assets/`: the AGT logo and the fonts apps bundle (NMS Futura, NMS Glyphs Mono and Twemoji Country Flags), with SHA-256, source, copyright and licence for each in `assets/README.md`, and the licence
   texts in `assets/licenses/` (#7). `scripts/check_spec.py` checks the hashes.
 - UI-15: apps copy these assets unmodified from the spec repository at their spec tag, SHOULD ship the licence files
   and credit the fonts in their README; the licences' own terms (the logo is all rights reserved, NMS Glyphs Mono is
-  non-commercial) apply (#7). The three No Man's Sky fonts are credited to their embedded authors and to Hello
+  non-commercial) apply (#7). The two No Man's Sky fonts are credited to their embedded authors and to Hello
   Games.
 - Header rows **Reference version** (AGT Event Calendar 2.2.0, pinned to a commit until it is tagged) and **Assets**
   (#7).
-- UI-3: the optional `NMS Alphabet` font for text in the Expedition alphabet.
+- UI-3: the community `NMS Alphabet` font is not an AGT asset, because its FontStruct licence prohibits hosting
+  it as a web font.
 
 ### Changed
 
