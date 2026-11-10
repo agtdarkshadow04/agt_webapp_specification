@@ -987,7 +987,7 @@ All AGT apps MUST look like one family.
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     --agt-orange: #ffb451;      /* primary text accent, links, focus ring */
-    --agt-red-orange: #e25530;  /* primary buttons, scrollbar */
+    --agt-red-orange: #cb4c2b;  /* primary buttons, scrollbar; white text on it is 4.56:1 */
     --agt-red: #ff0500;         /* borders of primary/selected elements, danger */
     --bg: #0a0a0a;              /* page background */
     --surface: #111111;         /* panels, cards */
@@ -1107,7 +1107,19 @@ All AGT apps MUST look like one family.
 
 ## 16. Accessibility
 
-- **A11Y-1** Target WCAG 2.2 AA. Text contrast ≥ 4.5:1 (the token pairs above meet it; check new pairs).
+- **A11Y-1** Target WCAG 2.2 AA. Text contrast ≥ 4.5:1. Use only these token pairs for text, and check any new
+  pair with the WCAG 2.x formula before using it (UI controls and borders need ≥ 3:1):
+
+  | Text | on `--bg` | on `--surface` | on `--surface-raised` | on `--surface-soft` |
+  | --- | --- | --- | --- | --- |
+  | `#fff` (headings) | 19.80 | 18.88 | 18.10 | 17.40 |
+  | `--text` | 17.92 | 17.09 | 16.38 | 15.75 |
+  | `--agt-orange` | 11.22 | 10.70 | 10.25 | 9.86 |
+  | `--muted` | 7.29 | 6.95 | 6.66 | 6.41 |
+  | `--agt-red` | 4.97 | 4.74 | 4.54 | 4.37: **not for text** |
+
+  White text on `--agt-red-orange` (`.button-primary`) is 4.56:1. Never put `--agt-red` text on `--surface-soft`
+  (hover and nested surfaces); use `--text` with a red border or icon there instead.
 - **A11Y-2** Dialogs use the shared `useDialog(dialogRef, initialFocusRef, onClose)` hook: Escape closes,
   Tab is trapped, initial focus is set, focus returns to the opener, page scroll is locked. Dialogs have
   `role="dialog"`, `aria-modal="true"` and `aria-labelledby`. Openers set `aria-haspopup="dialog"` and
