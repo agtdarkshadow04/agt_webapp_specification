@@ -39,6 +39,11 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- UI-1: `--agt-red-orange` is `#cb4c2b` instead of `#e25530` (#27). White text on it, as UI-9 requires for
+  `.button-primary`, was 3.76:1 and failed A11Y-1's 4.5:1; it is now 4.56:1. Apps change the token in their UI-1
+  block when they move to this version; nothing else changes.
+- A11Y-1: a table of the approved text and background token pairs with their contrast ratios, replacing the claim
+  that every token pair passes. `--agt-red` text is not used on `--surface-soft` (4.37:1) (#27).
 - §0: "when the spec is silent" refers to the reference implementation at the pinned **Reference version**, not its
   latest commit (#7).
 - VER-12: the release PR description SHOULD carry the dependency review (STACK-6) and the acceptance test results
