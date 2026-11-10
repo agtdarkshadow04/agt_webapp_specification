@@ -23,9 +23,12 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   returns `{ "status": "maintenance" }`, and background jobs pause. Add `maintenance` to the error codes (API-6) and
   show it in the UI as a notice that retries once (FE-5).
 - **Snapshot (BAK-9):** take the database snapshot and copy the uploads inside the `backup` lock, after the drain.
-- **Shared lock (BAK-12, DATA-2, #37):** Postgres apps, even with one process, add the control connection, the
-  `control` schema (`control.operation`, `control.process`), the heartbeat registry, the advisory lock, following and
-  acknowledging the shared state, pool recreation after a restore, and owner-failure recovery. Exclude the `control`
+- **Shared lock (BAK-12, DATA-2, #37, #53):** Postgres apps, even with one process, add the control connection, the
+  `control.operation` state row, and the two advisory locks: every data write holds the shared write lock (with a
+  30 s `lock_timeout`) and checks that the state is `idle` inside it; backup and restore take the operation lock and
+  then the write lock exclusively. Add the startup barrier, following the state, pool recreation after a restore,
+  aborting at once when the owner's control connection drops, and owner-failure recovery with a `pg_locks` check
+  scoped to the current database. Exclude the `control`
   schema from `pg_dump` and from the restore's table of contents. All processes share one data directory. SQLite
   apps run exactly one process. Add the two-process tests (TEST-4).
 - **Restore steps (BAK-4, BAK-10, BAK-11):** drain in-flight requests (30 s, else `409 conflict`), close and reopen the
@@ -87,7 +90,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - §12.2 *Consistency and concurrency*: BAK-8, the operation lock with draining, `503 maintenance` and `409 conflict`,
   and BAK-9, consistent snapshots (#5, #37).
 - BAK-12: the shared operation lock for Postgres apps, so several processes or replicas can share one database and
-  data directory (#37).
+  data directory (#37). PostgreSQL itself fences the writes: every write holds a shared advisory lock and backup or
+  restore takes it exclusively, so a paused or newly started process can never write into a snapshot (#53).
 - BAK-10 (rollback) and BAK-11 (failed rollback: maintenance, marker file, refusal to start) (#5).
 - API-6: the error body's `params`, and `code` and `params` on every `FieldError`, with a standard table of field
   codes (#9).
