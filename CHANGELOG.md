@@ -57,9 +57,11 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   conflict otherwise). Run `npm run check` afterwards; the reference implementation needed no source changes.
 - **Install scripts (STACK-7, #12):** record `allowScripts` in `package.json` (`npm install-scripts approve
   better-sqlite3 esbuild`) so that `npm install-scripts ls` lists nothing.
-- **Acceptance tests (§19.1, TEST-2, VER-12, #11):** TEST-6 to TEST-9 are now required. Add the Playwright suite
-  (`npm run test:e2e`) and run it in CI, add the proxy `Secure` cookie test to the server tests, and before every
-  release run the manual accessibility checklist, both installation smoke tests and (from the second release on)
+- **Acceptance tests (§19.1, TEST-2, VER-12, #11, #40):** TEST-6 to TEST-9 are now required. Add the Playwright suite
+  (`npm run test:e2e`) and run it in CI after installing Chromium (`npx playwright install --with-deps chromium`, or
+  the matching `mcr.microsoft.com/playwright` image), with `workers: 1`, `fullyParallel: false` and first-run setup
+  as a setup project; add `playwright.config.ts` and `tests/e2e/`, and ignore `test-results/` and
+  `playwright-report/`. Add the proxy `Secure` cookie test to the server tests, and before every release run the manual accessibility checklist, both installation smoke tests and (from the second release on)
   the upgrade and rollback test. Record all results in the release PR; never tag a release with a failing one.
 - **Base stylesheet (UI-16, #7):** copy `assets/css/agt-base.css` to `src/agt-base.css` unmodified and make
   `@import './agt-base.css';` the first rule of `src/styles.css`. Then delete from your own CSS everything the base
@@ -93,6 +95,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- TEST-6: CI installs the Playwright browser and its system libraries; the suite runs with one worker and a setup
+  project for first-run setup; REPO-1 lists `playwright.config.ts` and `tests/e2e/`, and REPO-2 ignores Playwright's
+  output directories (#40).
 - STACK-1: `engines` pins both release lines with an upper bound, `"node": ">=26.0.0 <27"` and `"npm": ">=11.20.0 <12"`,
   instead of the open-ended `>=26.0.0` (#39).
 - AUTH-2: verification accepts only the supported scrypt parameter profile and uses a fixed `maxmem`, instead of

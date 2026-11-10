@@ -199,6 +199,8 @@ agt_<app_snake>/
 ├── package.json  package-lock.json
 ├── tsconfig.json tsconfig.app.json tsconfig.node.json tsconfig.server.json
 ├── vite.config.ts
+├── playwright.config.ts      # browser tests (TEST-6)
+├── tests/e2e/                # *.spec.ts (TEST-6)
 ├── public/                   # bundled static assets: logo, fonts (never hotlinked)
 ├── server/
 │   ├── index.ts              # entry: load config, open DB, read env, listen, graceful shutdown
@@ -232,7 +234,8 @@ agt_<app_snake>/
 ```
 
 - **REPO-2** `.gitignore` and `.dockerignore` MUST exclude `.env`, `.env.*` (except `.env.example`),
-  `config.yaml`, `data/`, `dist/`, `dist-server/`, `.test-build/` and `node_modules/`.
+  `config.yaml`, `data/`, `dist/`, `dist-server/`, `.test-build/`, `test-results/`, `playwright-report/` and
+  `node_modules/`.
 - **REPO-3** Shared logic that both the server and the browser need (validation, API types, formatting)
   MUST live in `src/lib/` and be imported by the server. Never duplicate a validation rule.
 
@@ -1699,7 +1702,7 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   | `check` | `npm run lint && npm test && npm run build` |
 
   Every app also has `test:e2e` (`npm run build && playwright test`, TEST-6). It is not part of `check`,
-  because it needs a browser.
+  because it needs a browser, which `npm ci` does not install (TEST-6).
 - **TEST-2** `npm run check` MUST pass before every commit and in CI. CI MUST also run `npm run test:e2e` (TEST-6).
 - **TEST-3** Client tests run in plain Node without a DOM; stub `globalThis.window` / `localStorage` where
   needed. Server tests use `createTestServer()` from `server/test/helpers.ts`, which creates a temp data dir,
@@ -1779,7 +1782,24 @@ records the results (VER-12).
 - **TEST-6** **Browser tests.** Apps MUST have a Playwright suite in `tests/e2e/*.spec.ts`, run by
   `npm run test:e2e` in CI and before every release. Playwright's `webServer` starts the built server
   (`node dist-server/index.mjs`) with a temporary data directory, a test `config.yaml` and a setup password, so
-  each run starts from first run. Chromium is enough. The suite covers at least:
+  each run starts from first run. Chromium is enough.
+  - **Browser install.** `npm ci` installs `@playwright/test` but no browser. CI MUST install Chromium and its
+    system libraries before `npm run test:e2e`, with the Playwright version from `package-lock.json`: either run
+    `npx playwright install --with-deps chromium` (it uses the project's Playwright; `--with-deps` installs the
+    Linux libraries with `apt` and needs root or `sudo`), or run the job in the official image
+    `mcr.microsoft.com/playwright:v<version>-noble` whose `<version>` equals the locked `@playwright/test` version.
+    The README's Development section gives the same `npx playwright install --with-deps chromium` command for local
+    runs.
+  - **One worker.** The suite shares one server and one data directory, and its tests change that state (first-run
+    setup, created content). `playwright.config.ts` MUST set `workers: 1` and `fullyParallel: false`, unless the app
+    gives every worker its own server, port and data directory. The first-run setup runs once, as a Playwright setup
+    project that the other projects list in `dependencies`, and saves the signed-in state with `storageState`; no
+    other test relies on the order of files.
+  - **Config.** `playwright.config.ts` sets `webServer` to `{ command: 'node dist-server/index.mjs', url:
+    'http://127.0.0.1:<port>/api/health', reuseExistingServer: false }` with the test environment, uses
+    `forbidOnly: !!process.env.CI`, and keeps traces off by default (`trace: 'retain-on-failure'` at most).
+
+  The suite covers at least:
   - both entries (`/` and `/admin`) load with no console errors and no CSP violations (listen for `console` and
     `securitypolicyviolation`);
   - first-run setup and admin sign-in through the UI (AUTH-5);
