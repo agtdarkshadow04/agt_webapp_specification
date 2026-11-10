@@ -32,6 +32,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   `notices`, and `params` to the error codes that need values (`rate_limited`, `maintenance`, `file_too_large`,
   `field_too_large`, `defined_in_config`). The shared validators return the same codes. Update the `ErrorBody` and
   `FieldError` schemas. Existing fields keep their meaning, so older clients keep working.
+- **AI disclosure (DOC-1, #10):** change the README's disclosure line to exactly
+  `> **AI Disclosure:** This software was created using generative AI.` Remove "Its functionality has been verified
+  by human review." and any other claim of review or verification.
 - **Translated errors (I18N-6, #9):** add a translation in every locale for every error code and field code, add
   `src/lib/errors.ts` with `errorText()` and `fieldErrorText()`, and show errors only through them (FE-5). Add the
   TEST-4 translation and error body checks.
@@ -55,6 +58,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - BAK-3: `action=restore` re-validates its upload; there is no state between preview and restore (#5).
 - BAK-4: restore is an ordered procedure with draining, a database or pool reopen, and a post-restore health check
   (#5).
+- DOC-1: the AI disclosure line no longer claims human review, which the spec never required; it is now
+  "This software was created using generative AI." (#10). The spec repository's README says the same of the spec.
 - I18N-5, FE-5, FE-6: error text is translated by code, and the shared validators return field codes (#9).
 - SRV-11: `GET /api/health` reports `maintenance` during a restore. FE-5: how clients show `503 maintenance`.
 - DOC-1: Troubleshooting covers maintenance and failed restores.

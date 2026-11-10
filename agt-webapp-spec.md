@@ -1685,8 +1685,9 @@ Backups under concurrent writes and failures during a restore are covered by ser
 
 ### 20.1 README.md (for operators)
 
-- **DOC-1** `README.md` MUST start with the title, the AI disclosure line
-  (`> **AI Disclosure:** This software was created using generative AI. Its functionality has been verified by human review.`),
+- **DOC-1** `README.md` MUST start with the title, the AI disclosure line, verbatim
+  (`> **AI Disclosure:** This software was created using generative AI.`), with nothing added that claims human review
+  or any other verification,
   a one-paragraph description and the self-hosting guarantees (no cloud, no CDNs, no outbound requests,
   where data lives). Then these sections, in order:
   1. **Contents**

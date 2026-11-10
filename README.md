@@ -1,6 +1,6 @@
 # AGT Web Application Specification
 
-> **AI Disclosure:** This specification was created using generative AI. Its content has been verified by human review.
+> **AI Disclosure:** This specification was created using generative AI.
 
 The normative standard for every Alliance of Galactic Travellers (AGT) web application: stack, repository
 layout, API, data storage, configuration, authentication, security, logging, backups, UI design,
