@@ -32,6 +32,11 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   database or `pg.Pool`, run the post-restore health check, roll back on failure (Postgres: from the pre-restore
   backup), and on a failed rollback stay in maintenance with `<dataDir>/restore-failed.json` and refuse to start while
   that file exists. Sessions are ended only by a successful restore.
+- **Password hash check (AUTH-2, BAK-3, #38):** call scrypt only with the fixed options
+  `{ N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }`. Before verifying, check the stored hash's format, its
+  parameters against the supported profile (`N = 32768, r = 8, p = 1`) and its salt and hash lengths; reject a
+  failing hash with `401 invalid_credentials` and a server log `error` without calling scrypt. The restore preview
+  rejects a backup whose admin hash fails the check. Add the TEST-4 cases.
 - **Finishing a restore (BAK-4 step 6, BAK-10, #44):** drop locked settings and clear `sessions` in one transaction
   and roll back if it fails; name set-aside paths `<name>.restore-old-<timestamp>`; a failure deleting them is only a
   warning in the report and the server log, never deleted automatically later; release the lock in a `finally`;
@@ -88,6 +93,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- AUTH-2: verification accepts only the supported scrypt parameter profile and uses a fixed `maxmem`, instead of
+  trusting `N`, `r` and `p` from the stored hash (#38). BAK-3: the preview checks the admin hash.
 - BAK-3: `action=restore` re-validates its upload; there is no state between preview and restore (#5).
 - BAK-4: restore is an ordered procedure with draining, a database or pool reopen, and a post-restore health check
   (#5). Step 6 is split into commit, clean-up, lock release and response, with defined failure handling, and BAK-10
