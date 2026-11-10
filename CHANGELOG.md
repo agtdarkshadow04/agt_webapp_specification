@@ -37,6 +37,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   parameters against the supported profile (`N = 32768, r = 8, p = 1`) and its salt and hash lengths; reject a
   failing hash with `401 invalid_credentials` and a server log `error` without calling scrypt. The restore preview
   rejects a backup whose admin hash fails the check. Add the TEST-4 cases.
+- **Setup password and username (AUTH-3, AUTH-5, SRV-8, #45):** at startup, while no admin exists, refuse to start if
+  `AGT_<APP>_SETUP_PASSWORD` is longer than 1024 characters. Reject a username that is empty after trimming or longer
+  than 64 characters with `400 validation_failed`. Add the TEST-4 cases.
 - **Finishing a restore (BAK-4 step 6, BAK-10, #44):** drop locked settings and clear `sessions` in one transaction
   and roll back if it fails; name set-aside paths `<name>.restore-old-<timestamp>`; a failure deleting them is only a
   warning in the report and the server log, never deleted automatically later; release the lock in a `finally`;
@@ -100,6 +103,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- AUTH-3: the 1–64 character limit on the trimmed username is a MUST (was SHOULD), matching the request schema.
+  AUTH-5 and SRV-8: a setup password longer than the 1024-character request limit stops startup (#45).
 - CFG-1: the second source is the process environment, not only `.env`: operator secrets from `.env` plus the
   operational variables in CFG-2 that the Dockerfile, systemd unit, Compose file or tooling set. A clarification; no
   change for apps (#43).

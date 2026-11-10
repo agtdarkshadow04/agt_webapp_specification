@@ -259,7 +259,7 @@ agt_<app_snake>/
   passwords, raw client IP addresses or request bodies.
 - **SRV-7** Handle `SIGTERM` and `SIGINT`: `await app.close()`, close the database, exit 0.
 - **SRV-8** Refuse to start (exit 1, one clear log line) on an invalid config file, a database schema newer
-  than the app supports, or a missing required secret.
+  than the app supports, a missing required secret, or an invalid setup password (AUTH-5).
 - **SRV-9** Static files: register `@fastify/static` on `dist/` with `index: false`. Serve `GET /` →
   `index.html`, `GET /admin` → `admin.html`, redirect `/admin/` → `/admin`. Hashed files under `/assets/` get
   `Cache-Control: public, max-age=31536000, immutable`; everything else gets `no-store`.
@@ -650,7 +650,8 @@ agt_<app_snake>/
   password, and the server log gets an `error` (source `auth`, "The stored admin password hash is malformed or uses
   unsupported scrypt parameters."; never the hash itself). Recovery is AUTH-7.
 - **AUTH-3** Admin passwords MUST be 12–1024 characters. The admin username is trimmed of surrounding whitespace
-  and SHOULD then be 1–64 characters; it is stored as entered after trimming (no case folding or other
+  and MUST then be 1–64 characters (`400 validation_failed` otherwise; lengths here and in AUTH-5 count Unicode code
+  points, as JSON Schema `maxLength` does); it is stored as entered after trimming (no case folding or other
   normalization), so login compares the trimmed input with it exactly. Compare secrets (setup password,
   usernames) with a constant-time function that does not return early when the lengths differ: compare the
   SHA-256 digests of both values with `crypto.timingSafeEqual`, or pad both to the longer length, compare them,
@@ -674,6 +675,12 @@ agt_<app_snake>/
      an admin exists, **even if the variable is still set**. On success it creates the admin, signs them in
      and returns `201 { username }`.
   4. The setup password never becomes the admin password and is never stored.
+
+  **Startup check.** While no admin exists and `AGT_<APP>_SETUP_PASSWORD` is set and not empty, its value MUST be
+  at most 1024 characters, measured as read from the environment, so it can be typed into a request that the schema
+  below accepts. A longer value stops the server (SRV-8) with "AGT_<APP>_SETUP_PASSWORD is longer than 1024
+  characters. Set a shorter value in .env and restart." An empty value still means "not set" (step 2). Once an admin
+  exists the value is not checked, only warned about (AUTH-6).
 
   Request size: the setup and login body schemas cap `setupPassword` and `password` at 1024 characters
   (`maxLength`, matching AUTH-3) and `username` at 64. Fastify's `bodyLimit` for JSON requests SHOULD be at most
@@ -1725,7 +1732,9 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   `after()`. Postgres apps create a unique schema per test server in the database given by
   `AGT_<APP>_TEST_DATABASE_URL` and drop it on close.
 - **TEST-4** Required test coverage, at minimum:
-  - first-run setup: unset password (503), wrong password (401), reuse of setup password (400), missing CSRF
+  - first-run setup: a setup password longer than 1024 characters stops startup while no admin exists (AUTH-5);
+    a username that is empty after trimming, or 65 characters long, is rejected with `400` (AUTH-3);
+    unset password (503), wrong password (401), reuse of setup password (400), missing CSRF
     header (403), success (201 + session), disabled after setup (410) even while the variable is set;
   - password hashing: hash a password and verify it with the exact production options (AUTH-2), and a wrong
     password fails verification; stored hashes with hostile or unsupported parameters (for example `N = 2^30`,
