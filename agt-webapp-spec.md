@@ -884,19 +884,22 @@ agt_<app_snake>/
 ### 12.2 Consistency and concurrency
 
 - **BAK-8** **Operation lock.** Every app process has one local lock with three states: `idle`, `backup` and
-  `restore`. In a SQLite app it is the whole lock. In a Postgres app the local lock of every process follows the
-  shared state of BAK-12, so a backup or restore started in one process applies to all of them.
+  `restore`. In a SQLite app it is the whole lock. In a Postgres app the database enforces the lock for every process
+  (BAK-12): the local state follows the shared state and decides what requests are answered, while database locks
+  decide which writes may run.
   - A backup or restore that finds an operation already running (locally, or in any process for Postgres) returns
     `409 conflict` ("A backup or restore is already running.") without doing anything. The pre-restore backup
     (BAK-4) runs under the restore's own lock.
   - **Draining.** Entering a state waits for the requests and jobs that the state stops and that are **already in
     progress**: for `backup`, every data write (below); for `restore`, every `/api/` request and background job.
     New ones that the state stops are held from the moment the state is entered (`backup`) or refused (`restore`).
-    The process drains for up to 30 seconds. If something is still running then, the operation is abandoned: the
-    lock returns to `idle`, nothing has changed, and the request gets `409 conflict` ("The server is busy. Try
-    again."). A data write is any non-`GET` `/api/` route except `/api/admin/login` and `/api/admin/logout`, and any
-    background job that writes the main database or uploads; count them with an in-flight counter that each such
-    request or job increments when it starts and decrements when it ends, including on error.
+    The drain lasts up to 30 seconds. If something is still running then, the operation is abandoned: the lock
+    returns to `idle`, nothing has changed, and the request gets `409 conflict` ("The server is busy. Try again.").
+    A data write is any non-`GET` `/api/` route except `/api/admin/login` and `/api/admin/logout`, and any
+    background job that writes the main database or uploads. SQLite apps count them with an in-flight counter that
+    each such request or job increments when it starts and decrements when it ends, including on error. Postgres
+    apps drain writes through the write lock instead (BAK-12), which covers every process; reads in other processes
+    stop as soon as they see the new state.
   - **During `backup`:** reads proceed. A new data write waits for the lock to return to `idle`, for up to 30
     seconds, and then proceeds. Past 30 seconds it returns `503 maintenance` with `Retry-After: 10`.
   - **During `restore`:** every `/api/` request except `GET /api/health` returns `503 maintenance` with
@@ -905,15 +908,28 @@ agt_<app_snake>/
     jobs pause. HTML and static files are still served.
   - Clients show `503 maintenance` as a non-blocking "Maintenance in progress" notice (FE-5) and retry the request
     once after `Retry-After`; they never treat it as a sign-out.
-- **BAK-9** **Consistent snapshot.** A backup starts only after the drain (BAK-8) has finished in every process, and
-  is created entirely while the `backup` state holds: the database snapshot (SQLite `db.backup()`; Postgres
+- **BAK-9** **Consistent snapshot.** A backup starts only after the drain (BAK-8) has finished (Postgres: once the
+  backup holds the exclusive write lock, BAK-12), and is created entirely while the `backup` state holds: the database snapshot (SQLite `db.backup()`; Postgres
   `pg_dump`) and the copy of `uploads/` are taken with no data write in between, so every upload the snapshot
   references is in the archive with the content it had at that moment.
 - **BAK-12** **Shared operation lock (Postgres apps).** The processes of a Postgres app coordinate through the
-  database:
-  - **Control connection.** Each process opens one dedicated `pg.Client` (not from the pool) at startup, keeps it
-    open for the life of the process, and reconnects it if it drops. All of the steps below use it, so they keep
-    working while a restore closes and recreates the pool (BAK-4).
+  database. Two advisory locks do the fencing, and PostgreSQL enforces them across every process; the shared state
+  row only decides how requests are answered.
+
+  | Lock | Key | Held by |
+  | --- | --- | --- |
+  | Operation lock | `(0, hashtext('agt_<app_snake>_operation'))` | The backup or restore owner, exclusive, for the whole operation, so only one runs at a time |
+  | Write lock | `(0, hashtext('agt_<app_snake>_writes'))` | Every data write, **shared**, for its whole duration; the backup or restore owner, **exclusive**, while it works |
+
+  PostgreSQL grants an exclusive request only when every earlier shared holder has released, and queues new shared
+  requests behind a waiting exclusive one. So taking the write lock exclusively drains the writes in progress in
+  every process and holds back new ones, however long a process is paused. Advisory locks belong to one database;
+  every check of `pg_locks` MUST include `database = (SELECT oid FROM pg_database WHERE datname =
+  current_database())`.
+
+  - **Control connection.** Each process opens one dedicated `pg.Client` (not from the pool) at startup and keeps it
+    open for the life of the process. The owner holds both locks on it, so they survive the pool being closed and
+    recreated during a restore (BAK-4). A follower reconnects it if it drops.
   - **Control schema.** At startup, before migrations, each process runs these idempotent statements (they are not
     numbered migrations, because a restore replaces the app's schema but never this one):
 
@@ -923,44 +939,60 @@ agt_<app_snake>/
       id integer PRIMARY KEY CHECK (id = 1),
       state text NOT NULL CHECK (state IN ('idle', 'backup', 'restore', 'restore_failed')),
       generation bigint NOT NULL,
-      owner uuid,                  -- process running the operation
+      owner uuid,                  -- process running the operation (crypto.randomUUID() at startup)
       started_at timestamptz,
       pre_restore_backup text,     -- file name, set once BAK-4 step 3 has written it
       admin_session_hash text      -- BAK-11: the session accepted while restore_failed
     );
     INSERT INTO control.operation (id, state, generation) VALUES (1, 'idle', 0) ON CONFLICT (id) DO NOTHING;
-    CREATE TABLE IF NOT EXISTS control.process (
-      id uuid PRIMARY KEY,         -- crypto.randomUUID() at startup
-      heartbeat_at timestamptz NOT NULL,
-      acked_generation bigint NOT NULL
-    );
     ```
 
     `pg_dump` excludes the `control` schema (BAK-2), and restore never touches it (BAK-4).
-  - **Registry.** Each process inserts its row at startup and updates `heartbeat_at` every 5 seconds. A process is
-    *live* while its heartbeat is less than 15 seconds old. Any process MAY delete rows whose heartbeat is more than
-    60 seconds old. On a clean shutdown (SRV-7) a process deletes its row.
-  - **Starting an operation.** The process that receives the backup or restore request takes the session-level
-    advisory lock `pg_try_advisory_lock(0, hashtext('agt_<app_snake>_operation'))` on its control connection. If it
-    does not get it, or `control.operation.state` is not `idle`, it returns `409 conflict` (BAK-8). Otherwise it
-    sets `state` to `backup` or `restore`, increments `generation`, and sets `owner` and `started_at`, in one
-    transaction. It holds the advisory lock until the operation has finished.
-  - **Following.** Every process, the owner included, reads `control.operation` at least once a second (it MAY also
-    `LISTEN` for a notification the owner sends with `NOTIFY` to react sooner). When it sees a new `generation` in
-    `backup` or `restore`, it enters that local state, drains (BAK-8), and then sets its `acked_generation` to that
-    generation. The owner waits until every live process has acknowledged, within the 30-second drain limit; if one
-    has not, the owner sets `state` back to `idle`, releases the advisory lock and returns `409 conflict`.
-  - **Finishing.** The owner sets `state` to `idle` (or to `restore_failed`, BAK-11) and then releases the advisory
-    lock. Each process returns to `idle` when it next reads the row. After a restore, each process closes and
-    recreates its `pg.Pool` before it serves `/api/` requests again, so no connection keeps state from the replaced
-    schema.
-  - **Owner failure.** If a process sees `state` `backup` or `restore` while no session holds the advisory lock, the owner
-    died. Check with `SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted AND classid = 0 AND objid =
+  - **Every data write** (BAK-8: requests and background jobs) runs on one client from the pool, in this order:
+    1. `SET lock_timeout = '30s'`, then `SELECT pg_advisory_lock_shared(0, hashtext('agt_<app_snake>_writes'))`. On
+       a lock timeout (SQLSTATE `55P03`) return `503 maintenance` with `Retry-After: 10` (a job retries later).
+    2. `BEGIN`, then `SELECT state FROM control.operation WHERE id = 1`. If it is not `idle`, roll back, unlock and
+       return `503 maintenance`. This check inside the lock is what keeps writes out after an owner fails or before
+       a process has seen the new state.
+    3. Write new upload files, change the database, `COMMIT`, then delete the files of removed uploads.
+    4. In a `finally`: `SELECT pg_advisory_unlock_shared(…)`, `RESET lock_timeout`, and release the client
+       (`client.release(err)` destroys it after an error).
+
+    The shared lock is session-level, so it covers the file work after `COMMIT` too. If the client's connection
+    fails at any point, its lock is gone: the write MUST stop at once and touch no more upload files. Writes MUST
+    NOT write the main database or `uploads/` any other way.
+  - **Starting an operation.** The owner, on its control connection:
+    1. `pg_try_advisory_lock` on the operation lock; if it fails, or `control.operation.state` is not `idle`, return
+       `409 conflict` (BAK-8).
+    2. In one transaction, set `state` to `backup` or `restore`, increment `generation`, and set `owner` and
+       `started_at`.
+    3. `SET lock_timeout = '30s'` and take the write lock exclusively (`pg_advisory_lock`). On a timeout, set
+       `state` back to `idle`, release the operation lock and return `409 conflict` ("The server is busy. Try
+       again."). Once it has the lock, no write runs in any process.
+  - **Finishing.** The owner sets `state` to `idle` (or to `restore_failed`, BAK-11), then releases the write lock,
+    then the operation lock. Writes waiting for the lock find `idle` and proceed.
+  - **Owner connection loss.** The owner listens for `error` and `end` on its control connection. Either one during
+    an operation fails it **at once**, because PostgreSQL has released both locks: kill the `pg_dump` or
+    `pg_restore` child (`SIGTERM`, then `SIGKILL` after 5 seconds), stop all file work (check an abort flag before
+    every file operation), and answer the request with `500 internal`. A backup leaves the data unchanged; a restore
+    enters `restore_failed` in that process and writes the BAK-11 marker. The owner never continues an operation on
+    a new connection.
+  - **Following.** Every process reads `control.operation` at least once a second on its control connection (it
+    MAY also `LISTEN` for a `NOTIFY` from the owner) and sets its local state to match, which decides the
+    `503 maintenance` answers of BAK-8 and the health status (SRV-11). A process MUST read it and set its local
+    state **before** it starts listening or running jobs. After a restore, each process closes and recreates its
+    `pg.Pool` before it serves `/api/` requests again, so no connection keeps state from the replaced schema. A read
+    that runs in another process before it has seen `restore` may fail or see the data from before the restore,
+    never half-restored data: `pg_restore --single-transaction` commits all at once.
+  - **Owner failure.** If a process sees `state` `backup` or `restore` while no session holds the operation lock,
+    the owner died. Check with `SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted AND database =
+    (SELECT oid FROM pg_database WHERE datname = current_database()) AND classid = 0 AND objid =
     hashtext('agt_<app_snake>_operation')::oid AND objsubid = 2` (no row: not held). Then:
     - `backup`: nothing has changed; it sets `state` to `idle`.
     - `restore`: the data may be half replaced; it sets `state` to `restore_failed`, writes the BAK-11 marker naming
       `pre_restore_backup` (or `null` if step 3 had not finished), and writes a server log `error` (source `backup`).
-    Use a conditional `UPDATE … WHERE generation = <seen generation>` so only one process acts.
+    Use a conditional `UPDATE … WHERE generation = <seen generation>` so only one process acts. Until then, writes
+    stay out because the state is not `idle` (step 2 above).
   - Sessions are rows in the shared database, so ending all sessions (BAK-4 step 6) ends them in every process.
 
 ### 12.3 Restore
@@ -1760,12 +1792,19 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
     shorter test limit); a second backup or restore gets `409 conflict`; during a restore every `/api/` route except
     health returns `503 maintenance` with `Retry-After`, and health returns `{ "status": "maintenance" }`;
   - Postgres apps, two processes (BAK-12): run a second app instance against the same database and data directory
-    (a second `buildApp()` with its own pool and control connection, or a second process). A backup started on one
-    makes writes on the other wait and includes a write the other had in progress; a backup or restore on one gets
-    `409 conflict` while the other runs one; during a restore on one, the other returns `503 maintenance` and health
-    `maintenance`, and afterwards serves the restored data with a new pool and no sessions; closing the owner's
-    control connection mid-backup returns the other to `idle`, and mid-restore puts it in `restore_failed` with the
-    marker file written;
+    (a second `buildApp()` with its own pool and control connection, or a second process):
+    - a backup started on one makes writes on the other wait and includes a write the other had in progress (held
+      open by a test hook); a write held open past 30 seconds makes the backup return `409 conflict`;
+    - a follower paused (test hook) for longer than its poll interval with a write in progress cannot write into a
+      snapshot: the backup waits for it or gives up with `409`;
+    - a backup or restore on one gets `409 conflict` while the other runs one;
+    - during a restore on one, the other returns `503 maintenance` and health `maintenance`, and afterwards serves
+      the restored data with a new pool and no sessions;
+    - a process started while a backup or restore runs serves no writes until it finishes;
+    - closing the owner's control connection mid-backup or mid-restore stops the owner's own work (no file written
+      after the close, the child process killed), returns the other process to `idle` (backup) or puts it in
+      `restore_failed` with the marker file written (restore), and no write runs in between;
+    - the same advisory key held in another database of the same server is ignored;
   - failure (BAK-10, BAK-11): a failure injected after the swap, and one injected into the step 6.1 transaction,
     each roll back and leave the data, the settings and the sessions as they were; a failure injected into deleting
     the set-aside paths still returns `200`, lists the paths as warnings and releases the lock; a failure injected into the rollback leaves the app in maintenance with `restore-failed.json`
