@@ -26,10 +26,10 @@ for link in sorted(set(re.findall(r'\]\(#([^)]+)\)', spec))):
         problems.append(f'broken internal link: #{link}')
 
 # Requirement IDs are defined as **PREFIX-N**, optionally with a label: **DATA-5 (SQLite)**.
-# DATA-5 is defined twice on purpose, once for SQLite and once for PostgreSQL.
+# Every ID is defined exactly once (SPEC-4).
 defined = re.findall(r'\*\*([A-Z0-9]+-\d+)(?: \([^)*]*\))?\*\*', spec)
 for rule_id in sorted(set(defined)):
-    if defined.count(rule_id) > 1 and rule_id != 'DATA-5':
+    if defined.count(rule_id) > 1:
         problems.append(f'requirement ID defined more than once: {rule_id}')
 prefixes = {rule_id.split('-')[0] for rule_id in defined}
 cited = set(re.findall(r'\b(' + '|'.join(sorted(prefixes)) + r')-(\d+)\b', spec))

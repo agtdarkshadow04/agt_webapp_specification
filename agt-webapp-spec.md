@@ -371,7 +371,8 @@ agt_<app_snake>/
   `foreign_keys = ON` and `busy_timeout = 5000`. The database file lives in `storage.dataDir`.
   Use `better-sqlite3`'s synchronous API and `db.transaction()`. Keep an `EXPECTED_TABLES` list used to check
   restored databases.
-- **DATA-5 (PostgreSQL)** Record versions in a `schema_migrations (version integer primary key, name text not
+- **DATA-11 (PostgreSQL)** The PostgreSQL counterpart of DATA-5; until spec 5.1.0 it was also numbered DATA-5.
+  Record versions in a `schema_migrations (version integer primary key, name text not
   null, applied_at timestamptz not null default now())` table. Take `pg_advisory_lock(<app-specific constant>)`
   while migrating so concurrent starts are safe. Use a single `pg.Pool`. Wrap multi-statement writes in a
   `withTransaction(pool, async (client) => …)` helper that always releases the client. Use
