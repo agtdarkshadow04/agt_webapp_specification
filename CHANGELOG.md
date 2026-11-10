@@ -43,6 +43,11 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - **Setup password and username (AUTH-3, AUTH-5, SRV-8, #45):** at startup, while no admin exists, refuse to start if
   `AGT_<APP>_SETUP_PASSWORD` is longer than 1024 characters. Reject a username that is empty after trimming or longer
   than 64 characters with `400 validation_failed`. Add the TEST-4 cases.
+- **Control migrations and startup order (BAK-12, DATA-11, #57):** Postgres apps create the `control` schema with
+  numbered `CONTROL_MIGRATIONS` (`server/migrations/control/`, recorded in `control.schema_migrations`) instead of
+  `IF NOT EXISTS` statements, and run every startup migration under the migration lock
+  `(0, hashtext('agt_<app_snake>_migrations'))` in the BAK-12 order; app migrations wait until no backup or restore
+  runs. Refuse to start on a newer control schema.
 - **Recovery session and startup (BAK-11, BAK-12, #56):** record the restoring admin's session hash, username and
   expiry when a restore starts (Postgres: in `control.operation`, columns `admin_session_hash`, `admin_username`,
   `admin_session_expires_at`); accept it only until that expiry; clear it on every normal end. Refuse to start while
@@ -112,6 +117,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- BAK-12, DATA-11: the control schema is versioned with its own migrations, and processes starting together set up
+  and migrate one at a time under one named migration lock (#57).
 - BAK-11: the recovery session is recorded when a restore starts, expires with the original session, and also covers a
   restore whose owner died; a missing marker file no longer clears `restore_failed` at startup (#56).
 - AUTH-3: the 1–64 character limit on the trimmed username is a MUST (was SHOULD), matching the request schema.
