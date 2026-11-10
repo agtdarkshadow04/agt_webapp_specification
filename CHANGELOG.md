@@ -16,7 +16,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   texts in `assets/licenses/` (#7). `scripts/check_spec.py` checks the hashes.
 - UI-15: apps copy these assets unmodified from the spec repository at their spec tag, SHOULD ship the licence files
   and credit the fonts in their README; the licences' own terms (the logo is all rights reserved, NMS Glyphs Mono is
-  non-commercial) apply (#7).
+  non-commercial) apply (#7). The three No Man's Sky fonts are credited to their embedded authors and to Hello
+  Games.
 - Header rows **Reference version** (AGT Event Calendar 2.2.0, pinned to a commit until it is tagged) and **Assets**
   (#7).
 - UI-3: the optional `NMS Alphabet` font for text in the Expedition alphabet.

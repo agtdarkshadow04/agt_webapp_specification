@@ -15,28 +15,30 @@ directory at the tag of the spec version they follow, unmodified, to the `public
 
 ## Sources and licences
 
-| File | Copyright / author | Source | Licence | What apps must do |
+| File | Credit (copyright / authors) | Source | Licence | What apps must do |
 | --- | --- | --- | --- | --- |
 | `AgtOfficialLogo.webp` | © Alliance of Galactic Travellers. All rights reserved | Alliance of Galactic Travellers | None granted. Use only in AGT apps | Do not modify it or use it outside AGT apps |
-| `NMSFuturaProBook_Kerned.ttf` | © 2020 Hector Javier Gonzalez Rivera; designer Blend3rman; No Man's Sky Community Developers & Designers (NMSCD) | [NMSCD/No-Mans-Sky-Universal-Font](https://github.com/NMSCD/No-Mans-Sky-Universal-Font/blob/master/assets/font/NMSFuturaProBook_Kerned/Web-TT/NMSFuturaProBook_Kerned.ttf) | [SIL Open Font License 1.1](licenses/NMSFuturaProBook-OFL.txt) | Ship `licenses/NMSFuturaProBook-OFL.txt` with the font. Never sell the font on its own |
-| `NMS-Glyphs-Mono-fixed2026.ttf` | © 2017 Hello Games & Stephan van der Feest (embedded copyright notice) | [No Man's Sky Wiki: File:NMS-Glyphs-Mono.ttf](https://nms.miraheze.org/wiki/File:NMS-Glyphs-Mono.ttf) | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) | Credit the authors and the licence (README credits). Non-commercial use only. A modified version must be marked as changed and shared under the same licence |
+| `NMSFuturaProBook_Kerned.ttf` | Embedded: No Man's Sky Community Developers & Designers (NMSCD), designer Blend3rman; licence notice © 2020 Hector Javier Gonzalez Rivera. Original game typeface: Hello Games (No Man's Sky) | [NMSCD/No-Mans-Sky-Universal-Font](https://github.com/NMSCD/No-Mans-Sky-Universal-Font/blob/master/assets/font/NMSFuturaProBook_Kerned/Web-TT/NMSFuturaProBook_Kerned.ttf) | [SIL Open Font License 1.1](licenses/NMSFuturaProBook-OFL.txt) | Ship `licenses/NMSFuturaProBook-OFL.txt` with the font. Credit NMSCD, Blend3rman and Hello Games. Never sell the font on its own |
+| `NMS-Glyphs-Mono-fixed2026.ttf` | Embedded: © 2017 Hello Games & Stephan van der Feest. Portal glyph designs: Hello Games (No Man's Sky) | [No Man's Sky Wiki: File:NMS-Glyphs-Mono.ttf](https://nms.miraheze.org/wiki/File:NMS-Glyphs-Mono.ttf) | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) | Credit Stephan van der Feest, Hello Games and the licence (README credits). Non-commercial use only. Do not modify it: a modified version would have to be marked as changed and shared under the same licence |
 | `TwemojiCountryFlags.woff2` | Flag artwork: Twitter, Inc. and other contributors (Twemoji); font packaging: © 2022 TalkJS | [talkjs/country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill) 0.1.10 | Artwork [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), packaging MIT ([licence file](licenses/TwemojiCountryFlags-LICENSE.md)) | Ship `licenses/TwemojiCountryFlags-LICENSE.md` next to the font |
-| `nms-alphabet.ttf` | © 2022 seontonppa (embedded notice); built with FontStruct | [NMSCD/Expedition-Alphabet](https://github.com/NMSCD/Expedition-Alphabet/blob/main/public/assets/font/nms-alphabet.ttf) | [FontStruct licence](https://fontstruct.com/licenses/demo/9) | Follow the FontStruct licence linked here; credit the author |
+| `nms-alphabet.ttf` | Embedded: © 2022 seontonppa, built with FontStruct. Expedition alphabet designs: Hello Games (No Man's Sky) | [NMSCD/Expedition-Alphabet](https://github.com/NMSCD/Expedition-Alphabet/blob/main/public/assets/font/nms-alphabet.ttf) | [FontStruct licence](https://fontstruct.com/licenses/demo/9) | Follow the FontStruct licence linked here; credit seontonppa and Hello Games |
 
-Apps credit the fonts in their README (DOC-1) with each font's name, author, licence and source link, as in the
-table above.
+Apps credit the fonts in their README (DOC-1) with each font's name, everyone in its **Credit** column (for the
+three No Man's Sky fonts that includes Hello Games, whose game the designs come from), its licence and its source
+link, as in the table above.
 
 ## Provenance notes
 
-- **Who wrote this table.** The maintainer supplied the sources and licences. The copyright holders are taken from
-  each font's embedded notice. The Futura licence text was read from its source repository. The Miraheze and
+- **Who wrote this table.** The maintainer supplied the sources and licences. The credits are each font's embedded
+  authors plus Hello Games, the maker of No Man's Sky, whose typeface, portal glyphs and Expedition alphabet the
+  three game fonts reproduce. The Futura licence text was read from its source repository. The Miraheze and
   FontStruct pages could not be opened when this table was written, so the CC BY-NC-SA 4.0 and FontStruct licence
   entries are as given by the maintainer, not checked against those pages.
 - **NMS Futura** is described by NMSCD as datamined from No Man's Sky's game files and "based on the Futura Pro
   font family". The OFL covers NMSCD's kerned version; it cannot grant rights that the original font's owners did
   not.
-- **NMS Glyphs Mono** draws the portal glyphs from No Man's Sky (© Hello Games). The `-fixed2026` file name
-  suggests it was changed from the wiki's original. If it was, CC BY-NC-SA requires the change to be noted and the
-  font to stay under the same licence; record what changed here when it is known.
+- **NMS Glyphs Mono** is the wiki's original file, unmodified: the maintainer supplied the copy from the No Man's
+  Sky Wiki, and it is byte-identical to `NMS-Glyphs-Mono-fixed2026.ttf` (same SHA-256). Despite its name, the
+  `-fixed2026` file is not a changed version; the name is kept because UI-14 and existing apps use it.
 - **Non-commercial use.** Because of NMS Glyphs Mono's licence, an AGT app that shows portal glyphs must not be
   used commercially.

@@ -1038,7 +1038,9 @@ All AGT apps MUST look like one family.
   [`assets/`](https://github.com/agtdarkshadow04/agt_webapp_specification/blob/main/assets/README.md) in the spec's source repository, at the tag of the spec version the app follows.
   Copy them unmodified, under the same file names, and check each file against the SHA-256 in `assets/README.md`. Apps
   SHOULD ship the licence files listed there next to their fonts (`public/fonts/`), and SHOULD credit every bundled
-  font in the README (name, author, licence, source link). The licences themselves apply whatever this spec says:
+  font in the README (name, everyone in its credit line in `assets/README.md`, licence, source link). The three
+  No Man's Sky fonts (NMS Futura, NMS Glyphs Mono, NMS Alphabet) are credited to their embedded authors and to
+  Hello Games. The licences themselves apply whatever this spec says:
   the AGT logo is © Alliance of Galactic Travellers with all rights reserved and is used only in AGT apps, and
   NMS Glyphs Mono is CC BY-NC-SA 4.0, so an app that shows portal glyphs is non-commercial.
 
