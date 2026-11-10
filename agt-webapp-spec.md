@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Spec version** | 5.0.0 |
+| **Spec version** | 5.1.0 |
 | **Status** | Normative |
 | **Audience** | AI coding agents that design, build, review or maintain AGT web applications |
 | **Source** | [`agtdarkshadow04/agt_webapp_specification`](https://github.com/agtdarkshadow04/agt_webapp_specification), released as tags `vX.Y.Z` (SPEC-1) |
@@ -656,25 +656,36 @@ agt_<app_snake>/
   manifest.json        # { format: "agt-<app>-backup", formatVersion, appVersion, schemaVersion,
                        #   createdAt, files: [{ path, size, sha256 }] }
   database.sqlite      # SQLite apps: online-backup snapshot, sessions deleted, VACUUMed, journal_mode DELETE
-  database.dump        # Postgres apps: pg_dump --format=custom (sessions table data excluded)
+  database.dump        # Postgres apps: pg_dump --format=custom --exclude-schema=logs --exclude-table-data=sessions
   uploads/<uuid>.<ext> # every stored upload
   config.yaml          # the current file, byte for byte, if one exists
   ```
 
-  `.env` and the log store (LOG-17) are never included. The README warns that backups contain the admin
+  `.env` and the log store (LOG-17) are never included. For Postgres apps the log store is the `logs` schema of
+  the same database (LOG-1), so `pg_dump` MUST be given `--exclude-schema=logs`. The README warns that backups contain the admin
   password hash and generated secrets and must be stored securely.
 - **BAK-3** Restore MUST first run a **preview** that validates without changing anything: manifest format
   and checksums, only expected paths, size and entry limits, database integrity (`PRAGMA integrity_check` /
   `pg_restore --list`), schema version (older → will be migrated; newer → refused), required tables, and
   every upload through the image checks. The preview reports counts, warnings and how the backup's
-  `config.yaml` differs from the current one.
+  `config.yaml` differs from the current one. Postgres apps: if the dump's table of contents (`pg_restore --list`)
+  has entries in the `logs` schema (backups made before spec 5.1.0), the preview accepts it with the warning
+  that its log tables will be ignored.
 - **BAK-4** Restore then: writes an automatic pre-restore backup to
   `<backupsDir>/pre-restore-backup-<timestamp>.zip` and keeps it; replaces the database and uploads so that a
   failure leaves the instance unchanged (SQLite: prepare files beside the live ones, then rename-swap and
-  reopen `context.db`; Postgres: `pg_restore --clean --if-exists --single-transaction --no-owner`); runs pending
+  reopen `context.db`; Postgres: `pg_restore --clean --if-exists --single-transaction --no-owner
+  --use-list=<filtered TOC>`, see below); runs pending
   migrations; drops dashboard settings for keys now locked by `config.yaml` and lists them in the report;
   ends all sessions (the restored admin account replaces the current one) and signs the caller out. The log
   store is left untouched, and the restore itself is audited (LOG-17).
+
+  Postgres apps MUST NOT restore anything into the `logs` schema, even from a dump that contains it. Write the
+  dump's table of contents with `pg_restore --list`, remove the line of the `SCHEMA - logs` entry and every line
+  whose schema field is `logs` (e.g. `218; 1259 16393 TABLE logs audit_log agt_<app_snake>` and the matching
+  `TABLE DATA logs …` lines), and pass the rest with `--use-list`. `--exclude-schema=logs` alone is not enough
+  for `pg_restore`: it skips the objects in the schema but still runs `DROP SCHEMA IF EXISTS logs`, which fails
+  the restore.
 - **BAK-5** Restore MUST NEVER write `config.yaml`. If the backup contains one, the preview shows a line diff
   and offers it for download; the README explains how to put it in place by hand.
 - **BAK-6** Postgres apps run `pg_dump`/`pg_restore` as child processes with the password in the `PGPASSWORD`
@@ -1315,6 +1326,8 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   - ALTCHA (if present): valid, replayed, expired;
   - backup round trip; restore preview; tampered checksum rejected; newer schema refused; locked settings
     skipped; `config.yaml` never written; pre-restore backup created;
+  - Postgres apps: a backup's dump has no entries in the `logs` schema, and a restore, including one from a dump
+    that does contain the `logs` schema, leaves the log rows and `log_meta` unchanged (BAK-2, BAK-4, LOG-17);
   - migrations from an empty database and from each released schema version;
   - translation completeness for public and admin strings;
   - versioning (§21): `package.json` holds a valid SemVer version (VER-1); the newest `CHANGELOG.md` heading is

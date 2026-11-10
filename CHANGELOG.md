@@ -7,6 +7,22 @@ major for a new or stricter MUST, minor for a new SHOULD/MAY or section, patch f
 Versions before 4.0.0 were developed in the reference implementation's repository
 (`agtdarkshadow04/agt_event_calendar`, `docs/agt-webapp-spec.md`); the PR numbers below refer to that repository.
 
+## [5.1.0] - Unreleased
+
+### Added
+
+- TEST-4: Postgres apps test that backups contain no `logs` objects and that a restore leaves the log store
+  unchanged.
+
+### Fixed
+
+- Postgres backups included the log store and a restore overwrote it (#6), contrary to LOG-17: `pg_dump` dumped the
+  `logs` schema, and `pg_restore --clean` replaced the audit log and the IP-hash key (`log_meta`) with the backup's
+  copies. BAK-2 now dumps with `--exclude-schema=logs`. BAK-4 restores from a filtered table of contents
+  (`--use-list`) that leaves out the `logs` schema, so backups made before this fix still restore without
+  touching the logs; BAK-3 warns about them. Apps that follow LOG-17 already must make these changes: dump with
+  `--exclude-schema=logs` and restore with the filtered list.
+
 ## [5.0.0] - 2026-11-10
 
 ### Upgrade notes
