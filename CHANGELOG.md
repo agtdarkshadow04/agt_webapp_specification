@@ -16,6 +16,8 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 - API-13: the OpenAPI test SHOULD assert each operation's `security` value.
 - CFG-2: `AGT_<APP>_TEST_DATABASE_URL`, the test database of Postgres apps (TEST-3).
 - API-6: `400 unknown_setting` and `400 invalid_setting` (CFG-8) in the table of standard codes.
+- Header rows for the owner, the release date and approval record, and the security contact (#15).
+- CFG-6: allowed values of every standard dashboard-editable key (#15).
 
 ### Changed
 
@@ -24,6 +26,15 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   cite DATA-5 for PostgreSQL migrations (in code comments or the deviations table of `AGENTS.md`) change the
   citation to DATA-11 when they move to this version. `scripts/check_spec.py` no longer exempts DATA-5 from the
   duplicate-ID check.
+- Clarifications that keep implementations from diverging (#15):
+  - AUTH-3: admin usernames are trimmed, 1–64 characters (SHOULD), and compared exactly; how to compare secrets of
+    different lengths in constant time.
+  - AUTH-5: length caps on the setup and login fields, and a `bodyLimit` of at most 2 MiB for JSON (SHOULD).
+  - API-8: sort order and tie-breakers, cursor encoding, invalid and stale cursors, the default `limit`.
+  - API-10: `additionalProperties: false` applies to `params` and `querystring`, and what Fastify's default
+    `removeAdditional` does with unknown properties.
+  - SEC-7: rate limits are keyed by `request.ip`, which honours `trustProxy`.
+  - I18N-1: locale codes are BCP 47 tags; `pt` uses `pt-BR` where the region matters. Codes are never renamed.
 
 ### Fixed
 
