@@ -395,6 +395,7 @@ agt_<app_snake>/
   | `AGT_<APP>_DB_PASSWORD` | Operator (`.env`) | Postgres apps only |
   | `AGT_<APP>_CONFIG_FILE` | Dockerfile / systemd unit | Path of `config.yaml` (default `./config.yaml`) |
   | `AGT_<APP>_DATABASE_HOST` | `docker-compose.yml` | Postgres apps only; default host when `database.host` is not in `config.yaml` |
+  | `AGT_<APP>_SERVER_HOST` | Dockerfile | Listen address when `server.host` is not in `config.yaml` (the Dockerfile sets `0.0.0.0`; DEP-1) |
   | `AGT_<APP>_STATIC_DIR` | Development only | Override path to `dist/` |
   | `NODE_ENV` | Dockerfile / systemd unit | `production` |
 
@@ -412,7 +413,7 @@ agt_<app_snake>/
   ```yaml
   # Config-file-only keys
   # server:
-  #   host: 0.0.0.0
+  #   host: 127.0.0.1            # default: AGT_<APP>_SERVER_HOST if set (0.0.0.0 in the Docker image), else 127.0.0.1
   #   port: <registry port>
   #   trustProxy: false          # true, or proxy IP/CIDR (string or list)
   #   logLevel: info             # fatal|error|warn|info|debug|trace|silent
@@ -434,8 +435,7 @@ agt_<app_snake>/
   #   login:   { max: 10, windowMinutes: 15 }
   #   setup:   { max: 10, windowMinutes: 15 }
   #   adminUploads: { max: 120, windowMinutes: 15 }
-  # altcha:                      # apps with anonymous writes
-  #   hmacKey: <generated if unset, ≥ 32 chars>
+  # altcha:                      # apps with anonymous writes; the HMAC key is generated (ALT-2), never configured
   #   cost: 5000
   #   challengeTtlSeconds: 600
   #
@@ -552,6 +552,14 @@ agt_<app_snake>/
 
 - **SEC-4** Apps serve plain HTTP only and document a TLS-terminating reverse proxy (Caddy example in
   `deploy/Caddyfile.example`). `server.trustProxy` controls `X-Forwarded-*` trust; default `false`.
+  Because the app itself never encrypts, a default install MUST be reachable only from the host it runs on:
+  `server.host` defaults to `127.0.0.1` (CFG-5), and Compose publishes the port on `127.0.0.1` only (DEP-2).
+  Inside the container the app listens on `0.0.0.0` (`AGT_<APP>_SERVER_HOST`, DEP-1), which the loopback-only
+  published port keeps off the network. Making the app reachable from other machines is an explicit operator
+  change, documented in the README's *TLS and reverse proxies* section together with the proxy setup (DEP-10).
+  The server SHOULD write one `warn` server-log entry (source `security`) per process, the first time a login or
+  setup request arrives over plain HTTP from a non-loopback address, saying that credentials were sent
+  unencrypted and that a TLS proxy is needed.
 
 ### 10.3 CSRF and CORS
 
@@ -569,9 +577,18 @@ agt_<app_snake>/
 
 ### 10.5 Secrets
 
-- **SEC-8** Secrets live only in `.env` (or, for generated secrets such as the ALTCHA HMAC key, in an
-  `app_secrets` table). They never appear in `config.yaml`, logs, API responses, the OpenAPI document,
-  error messages or the client bundle. `.env` is never included in backups.
+- **SEC-8** Secrets live only in these places:
+
+  | Location | Holds | In backups |
+  | --- | --- | --- |
+  | `.env` | Operator-supplied secrets: `AGT_<APP>_SETUP_PASSWORD`, `AGT_<APP>_DB_PASSWORD`, other `AGT_<APP>_<NAME>` secrets (CFG-2) | No (BAK-2) |
+  | `app_secrets` table (main database) | Generated secrets that belong to the data, e.g. the ALTCHA HMAC key (ALT-2) | Yes, as part of the database |
+  | `log_meta` table (log store) | The IP-hash key only (LOG-12) | No (LOG-17) |
+
+  The admin password hash (AUTH-2) and session token hashes (AUTH-8) are stored in their own tables and are not
+  secrets in this sense, but the README still warns that backups contain the password hash (BAK-2). Secrets never
+  appear in `config.yaml` (which is copied into backups byte for byte, BAK-2), logs, API responses, the OpenAPI
+  document, error messages or the client bundle. Config keys that would hold a secret MUST NOT exist.
 
 ### 10.6 User content
 
@@ -613,8 +630,8 @@ agt_<app_snake>/
   MUST require a self-hosted ALTCHA proof-of-work solution **and** a rate limit (SEC-7). Apps with no
   anonymous writes do not include ALTCHA.
 - **ALT-2** Server: `GET /api/altcha/challenge` issues challenges with `altcha-lib` (SHA-256, cost and TTL
-  from `altcha.*`). The HMAC key comes from `altcha.hmacKey` in `config.yaml` or is generated once (32 random
-  bytes) and stored in `app_secrets`. Each solved challenge is accepted **once** (atomically insert
+  from `altcha.*`). The HMAC key is generated once (32 random bytes) and stored in `app_secrets` (SEC-8); it
+  is never read from `config.yaml` or the environment. Each solved challenge is accepted **once** (atomically insert
   each used challenge ID with its expiry into an `altcha_used` table and purge expired rows); expired challenges are
   rejected with `400 captcha_failed` and a message telling the user to verify again.
 - **ALT-3** Client: the `altcha` widget is bundled and lazy-loaded only when the form opens; its
@@ -1053,7 +1070,8 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   FROM node:24-bookworm-slim AS runtime
   # Postgres apps: install postgresql-client-<server major> from the PGDG apt repository here (BAK-6).
   ENV NODE_ENV=production \
-      AGT_<APP>_CONFIG_FILE=/app/config.yaml
+      AGT_<APP>_CONFIG_FILE=/app/config.yaml \
+      AGT_<APP>_SERVER_HOST=0.0.0.0
   WORKDIR /app
   COPY --from=build --chown=node:node /app/package.json ./
   COPY --from=build --chown=node:node /app/node_modules ./node_modules
@@ -1076,9 +1094,11 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
       build: .
       image: agt-<app>:latest
       restart: unless-stopped
-      # Plain HTTP only. Put a TLS-terminating reverse proxy in front and set server.trustProxy.
+      # Plain HTTP only, so the port is published on this host's loopback interface only (SEC-4).
+      # Put a TLS-terminating reverse proxy in front (README: TLS and reverse proxies) and set
+      # server.trustProxy. Publish on another interface only if that proxy runs on another machine.
       ports:
-        - "<port>:<port>"
+        - "127.0.0.1:<port>:<port>"
       env_file:
         - path: .env
           required: false
@@ -1251,9 +1271,11 @@ Installation instructions assume Ubuntu 24.04 LTS or Debian 12/13. Both methods 
   }
   ```
 
-  With a proxy, set `server.trustProxy: 127.0.0.1` (local) or the proxy's address/CIDR (Docker network), and
-  keep `session.secureCookie: auto`. When the proxy runs on the same host, bind the app to `127.0.0.1` or
-  restrict the published port.
+  With a proxy, set `server.trustProxy` to the address the app sees the proxy connect from: `127.0.0.1` for a
+  local installation, or the Docker network's gateway or the proxy container's address/CIDR for Docker. Keep
+  `session.secureCookie: auto`. The defaults (SEC-4) already suit a proxy on the same host. Only if the proxy
+  runs on another machine, set `server.host` (local) or the published address in `docker-compose.yml` (Docker)
+  to an interface that proxy can reach, and restrict that port to the proxy's address with a firewall.
 
 ## 19. Testing and tooling
 

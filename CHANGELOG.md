@@ -15,16 +15,47 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   `128 · r · (N + p + 2)` bytes (twice that recommended) computed from the stored hash's parameters when
   verifying. Without it, Node rejects the AUTH-2 parameters and first-run setup and login fail.
 - Add a test that hashes and verifies a password with the production options (TEST-4).
+- Stop reading `altcha.hmacKey` (ALT-2, CFG-5). Always generate the ALTCHA HMAC key into `app_secrets`. Because
+  unknown config keys stop the server (CFG-3), an app that accepted the key MUST NOT reject it straight away:
+  keep it in the config schema for one minor release as deprecated (VER-10), ignore its value, and write a
+  `warn` server-log entry at startup telling the operator to delete it from `config.yaml`. Remove it from the
+  schema in the app's next major release. Ignoring it changes the key, which only invalidates challenges that
+  are open at the time of the upgrade.
+- Default `server.host` to `127.0.0.1`, read `AGT_<APP>_SERVER_HOST` as the default when `server.host` is not
+  set (CFG-2, CFG-5), set `AGT_<APP>_SERVER_HOST=0.0.0.0` in the Dockerfile (DEP-1), and publish the Compose port
+  as `"127.0.0.1:<port>:<port>"` (DEP-2). This changes how existing installs behave, so it is a major version of
+  the app (VER-3). Its upgrade notes MUST tell operators that the app is now reachable only from its own host and
+  how to reach it through a TLS proxy (DEP-10); operators with a proxy on another machine set `server.host` or the
+  published address explicitly.
+- Optionally (SHOULD), warn in the server log the first time a login or setup request arrives over plain HTTP
+  from a non-loopback address (SEC-4).
+
+### Added
+
+- TEST-4: password hashing and verification with the production scrypt options.
+- CFG-2: `AGT_<APP>_SERVER_HOST`, the default listen address, set to `0.0.0.0` by the Dockerfile.
+- SEC-4: a server-log warning when credentials arrive over plain HTTP from another machine (SHOULD).
+
+### Changed
+
+- CFG-5: `server.host` defaults to `127.0.0.1`; `altcha.hmacKey` is removed.
+- ALT-2: the ALTCHA HMAC key is always generated and stored in `app_secrets`.
+- SEC-8: table of allowed secret locations (`.env`, `app_secrets`, `log_meta`) and whether each is in backups.
+- DEP-1: the Dockerfile sets `AGT_<APP>_SERVER_HOST=0.0.0.0`. DEP-2: Compose publishes `127.0.0.1:<port>:<port>`.
+- DEP-10: which `trustProxy` address to use for Docker, and how to expose the app to a proxy on another machine.
 
 ### Fixed
 
 - AUTH-2 could not be followed as written: `N = 2^15, r = 8, p = 1` need slightly more than Node's default
   32 MiB `maxmem`, so scrypt threw `ERR_CRYPTO_INVALID_SCRYPT_PARAMS`. AUTH-2 now requires `maxmem` for hashing
   and verification (#2).
-
-### Added
-
-- TEST-4: password hashing and verification with the production scrypt options.
+- Secret storage rules contradicted each other (#3): SEC-8 allowed secrets only in `.env` and `app_secrets`, but
+  CFG-5 and ALT-2 allowed the ALTCHA HMAC key in `config.yaml` (and so in every backup, BAK-2), and LOG-12 keeps
+  the IP-hash key in `log_meta`. SEC-8 now lists every allowed location and whether it is in backups, and the
+  key can no longer be configured.
+- A default install exposed plaintext admin login on every interface (#4): `server.host` defaulted to `0.0.0.0`
+  and Compose published the port on all interfaces, contradicting principle 3 (*Secure by default*). The app is
+  now reachable only from its own host until the operator puts a TLS proxy in front (SEC-4, DEP-10).
 
 ## [4.0.0] - 2026-11-10
 
