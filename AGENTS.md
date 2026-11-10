@@ -29,7 +29,8 @@ python3 scripts/check_spec.py   # links, requirement IDs, header version vs CHAN
 
 - **Version bump in every PR that changes the spec** (SPEC-4): major for a new or stricter MUST, minor for a new
   SHOULD/MAY or section, patch for clarifications. Update the `Spec version` row and add a `## [X.Y.Z] - Unreleased`
-  section to `CHANGELOG.md`. When the maintainer asks for a release, the release PR replaces `Unreleased` with the
+  section to `CHANGELOG.md`. Links from the spec into this repository use the tag of the spec version
+  (`…/blob/vX.Y.Z/…`), so a version bump updates them too; `scripts/check_spec.py` enforces it. When the maintainer asks for a release, the release PR replaces `Unreleased` with the
   date; then create the annotated tag `vX.Y.Z` on `main`.
 - **Requirement IDs are stable.** Never reuse or renumber an ID. Add new rules with the next free number of their
   prefix. Mark removed rules as removed instead of deleting them silently. Section numbers may change; when they

@@ -131,6 +131,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
 
 ### Changed
 
+- Header and UI-15: the `assets/` links point at this version's tag (`blob/v6.0.0/…`) instead of `main`, so a
+  pinned copy links to its own assets; `scripts/check_spec.py` checks that every repository link uses the current
+  version's tag. STACK-1: the note on the `engines` upper bound no longer says Node.js 27 is never LTS (#59).
 - BAK-8: a data write is defined by what it changes (the main database or uploads), declared per route and job and
   enforced by `withDataWrite()`, instead of by HTTP method; ALT-2: the HMAC key is created at startup (#58).
 - BAK-3: a Postgres preview restores the dump into a separate preview database to check it, after an allowlist of

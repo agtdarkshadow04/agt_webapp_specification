@@ -45,6 +45,11 @@ if not version:
     problems.append('no "Spec version" row in the header')
 elif not newest or newest.group(1) != version.group(1):
     problems.append(f'spec version {version.group(1)} is not the newest CHANGELOG.md heading')
+else:
+    # Links into this repository must point at this version's tag, so a pinned copy never follows main.
+    for ref in sorted(set(re.findall(r'agt_webapp_specification/(?:blob|tree)/([^/)\s]+)/', spec))):
+        if ref != f'v{version.group(1)}':
+            problems.append(f'repository link uses {ref!r} instead of the tag v{version.group(1)}')
 
 # assets/README.md lists each asset as | `path` | purpose | `sha256` |, paths relative to assets/.
 assets_dir = ROOT / 'assets'
