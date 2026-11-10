@@ -41,6 +41,10 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   conflict otherwise). Run `npm run check` afterwards; the reference implementation needed no source changes.
 - **Install scripts (STACK-7, #12):** record `allowScripts` in `package.json` (`npm install-scripts approve
   better-sqlite3 esbuild`) so that `npm install-scripts ls` lists nothing.
+- **Acceptance tests (§19.1, TEST-2, VER-12, #11):** TEST-6 to TEST-9 are now required. Add the Playwright suite
+  (`npm run test:e2e`) and run it in CI, add the proxy `Secure` cookie test to the server tests, and before every
+  release run the manual accessibility checklist, both installation smoke tests and (from the second release on)
+  the upgrade and rollback test. Record all results in the release PR; never tag a release with a failing one.
 - **Translated errors (I18N-6, #9):** add a translation in every locale for every error code and field code, add
   `src/lib/errors.ts` with `errorText()` and `fieldErrorText()`, and show errors only through them (FE-5). Add the
   TEST-4 translation and error body checks.
@@ -68,6 +72,9 @@ Versions before 4.0.0 were developed in the reference implementation's repositor
   (#5).
 - STACK-1: Node.js 26 LTS (was 24), TypeScript `~7.0` (was `~5.8`), Vite 8 with `@vitejs/plugin-react` 6 (was Vite 6),
   esbuild `^0.28`. DEP-1, DEP-6 and TEST-1 use Node.js 26 (#12).
+- §19.1: TEST-6 to TEST-9 are MUST instead of SHOULD and gate every release; TEST-2: CI also runs `npm run test:e2e`;
+  VER-12: the release PR MUST carry the acceptance test results, and a release is never tagged while one fails
+  (#11).
 - DOC-1: the AI disclosure line no longer claims human review, which the spec never required; it is now
   "This software was created using generative AI." (#10). The spec repository's README says the same of the spec.
 - I18N-5, FE-5, FE-6: error text is translated by code, and the shared validators return field codes (#9).
