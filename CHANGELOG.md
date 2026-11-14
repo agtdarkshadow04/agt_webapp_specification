@@ -7,6 +7,13 @@ major for a new or stricter MUST, minor for a new SHOULD/MAY or section, patch f
 Versions before 4.0.0 were developed in the reference implementation's repository
 (`agtdarkshadow04/agt_event_calendar`, `docs/agt-webapp-spec.md`); the PR numbers below refer to that repository.
 
+## [6.0.1] - Unreleased
+
+### Added
+
+- App registry (§2.1, NAME-1): `knowledge-base` (AGT Knowledge Base, `agtdarkshadow04/agt_knowledge_base`), default
+  port 8081, PostgreSQL.
+
 ## [6.0.0] - 2026-11-10
 
 The first production-ready version of the specification, and so far the only one. Versions before 6.0.0 were
