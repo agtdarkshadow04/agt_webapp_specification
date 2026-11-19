@@ -111,6 +111,7 @@ Add a row (next free port) when you create an app.
 | --- | --- | --- | --- | --- |
 | `event-calendar` | AGT Event Calendar | `agtdarkshadow04/agt_event_calendar` | 8080 | SQLite |
 | `knowledge-base` | AGT Knowledge Base | `agtdarkshadow04/agt_knowledge_base` | 8081 | PostgreSQL |
+| `trivia` | AGT Galactic Trivia | `agtdarkshadow04/agt_trivia` | 8082 | SQLite |
 
 ## 3. Technology stack
 
