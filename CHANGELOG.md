@@ -7,6 +7,13 @@ major for a new or stricter MUST, minor for a new SHOULD/MAY or section, patch f
 Versions before 4.0.0 were developed in the reference implementation's repository
 (`agtdarkshadow04/agt_event_calendar`, `docs/agt-webapp-spec.md`); the PR numbers below refer to that repository.
 
+## [6.0.3] - 2026-11-20
+
+### Added
+
+- App registry (§2.1, NAME-1): `trivia` (AGT Galactic Trivia, `agtdarkshadow04/agt_trivia`), default
+  port 8082, SQLite.
+
 ## [6.0.2] - 2026-11-19
 
 ### Changed
